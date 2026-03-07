@@ -1,0 +1,592 @@
+import { useState } from "react";
+
+const COLORS = {
+  bg: "#0D0F14",
+  surface: "#141720",
+  card: "#1C2030",
+  border: "#252A3A",
+  accent: "#F97316",
+  accentDim: "#7C3A12",
+  teal: "#14B8A6",
+  tealDim: "#0D4A44",
+  purple: "#8B5CF6",
+  purpleDim: "#3B2580",
+  red: "#EF4444",
+  redDim: "#5A1A1A",
+  green: "#22C55E",
+  greenDim: "#1A4A2A",
+  yellow: "#EAB308",
+  text: "#E2E8F0",
+  textMuted: "#64748B",
+  textDim: "#94A3B8",
+};
+
+const D_PHASES = [
+  { id: "D0", label: "D0", name: "Emergency Response", color: "#EF4444" },
+  { id: "D1", label: "D1", name: "Team Formation", color: "#F97316" },
+  { id: "D2", label: "D2", name: "Problem Description", color: "#EAB308" },
+  { id: "D3", label: "D3", name: "Containment", color: "#22C55E" },
+  { id: "D4", label: "D4", name: "Root Cause Analysis", color: "#14B8A6" },
+  { id: "D5", label: "D5", name: "Corrective Actions", color: "#3B82F6" },
+  { id: "D6", label: "D6", name: "Implement & Validate", color: "#8B5CF6" },
+  { id: "D7", label: "D7", name: "Prevent Recurrence", color: "#EC4899" },
+  { id: "D8", label: "D8", name: "Team Recognition", color: "#F97316" },
+];
+
+const AGILE_COLS = ["Backlog", "In Sprint", "In Progress", "Review", "Done"];
+
+const initialData = {
+  agileItems: [
+    { id: "A1", title: "Intake sensor calibration API", type: "Story", points: 8, assignee: "RK", col: "In Progress", priority: "High", tags: ["backend", "sensors"], linkedDefect: "8D-003" },
+    { id: "A2", title: "Dashboard velocity widget", type: "Story", points: 5, assignee: "ML", col: "Review", priority: "Med", tags: ["frontend"], linkedDefect: null },
+    { id: "A3", title: "GHL webhook retry logic", type: "Bug", points: 3, assignee: "KW", col: "In Sprint", priority: "High", tags: ["integration"], linkedDefect: "8D-001" },
+    { id: "A4", title: "Export reports to PDF", type: "Story", points: 13, assignee: "RK", col: "Backlog", priority: "Low", tags: ["reports"], linkedDefect: null },
+    { id: "A5", title: "Mobile push notifications", type: "Story", points: 8, assignee: "ML", col: "Backlog", priority: "Med", tags: ["mobile"], linkedDefect: null },
+    { id: "A6", title: "Automated 8D → Agile bridge", type: "Feature", points: 21, assignee: "KW", col: "In Sprint", priority: "Critical", tags: ["core", "8D"], linkedDefect: null },
+    { id: "A7", title: "Sprint burndown anomaly alert", type: "Bug", points: 2, assignee: "ML", col: "Done", priority: "Low", tags: ["analytics"], linkedDefect: null },
+  ],
+  defects: [
+    {
+      id: "8D-001", title: "Weld seam failure on batch #4471",
+      severity: "S2", phase: "D4", owner: "KW", team: ["KW", "RK", "ML"],
+      created: "2026-02-14", dueDate: "2026-03-10",
+      containment: "Hold on affected lot. 100% inspection activated.",
+      rootCause: "Electrode pressure drop caused by worn tip — confirmed via fishbone + 5-Why",
+      description: "15 units returned from field. Weld seam cracking under torque spec.",
+      linkedStory: "A3", bridged: true,
+    },
+    {
+      id: "8D-002", title: "Torque spec deviation line 7",
+      severity: "S1", phase: "D6", owner: "RK", team: ["RK", "KW"],
+      created: "2026-01-20", dueDate: "2026-03-15",
+      containment: "Rework process implemented. Line quarantined.",
+      rootCause: "Calibration drift in torque wrench model TW-22. PM interval too long.",
+      description: "Torque readings 12% below spec on 23 units across shift B.",
+      linkedStory: null, bridged: false,
+    },
+    {
+      id: "8D-003", title: "Sensor false-positive cascade",
+      severity: "S2", phase: "D2", owner: "ML", team: ["ML", "KW"],
+      created: "2026-02-28", dueDate: "2026-03-20",
+      containment: "Software kill-switch deployed to production.",
+      rootCause: "",
+      description: "Intake sensor reporting 300% above threshold intermittently. 8 customer complaints.",
+      linkedStory: "A1", bridged: true,
+    },
+    {
+      id: "8D-004", title: "Assembly line stoppage — lubricant contamination",
+      severity: "S3", phase: "D1", owner: "KW", team: ["KW"],
+      created: "2026-03-03", dueDate: "2026-03-25",
+      containment: "",
+      rootCause: "",
+      description: "Line 3 stopped 4 hrs. Lubricant cross-contamination suspected from supply change.",
+      linkedStory: null, bridged: false,
+    },
+  ],
+  sprints: [
+    { id: "SP-12", name: "Sprint 12", start: "Feb 24", end: "Mar 7", velocity: 34, target: 40, status: "active" },
+    { id: "SP-13", name: "Sprint 13", start: "Mar 10", end: "Mar 21", velocity: 0, target: 42, status: "planned" },
+  ],
+};
+
+const severityColor = (s) => ({ S1: COLORS.red, S2: COLORS.accent, S3: COLORS.yellow, S4: COLORS.teal }[s] || COLORS.textMuted);
+const priorityColor = (p) => ({ Critical: COLORS.red, High: COLORS.accent, Med: COLORS.yellow, Low: COLORS.teal }[p] || COLORS.textMuted);
+const typeColor = (t) => ({ Bug: COLORS.red, Story: COLORS.teal, Feature: COLORS.purple }[t] || COLORS.textMuted);
+
+export default function FlowForge() {
+  const [view, setView] = useState("board"); // board | defects | bridge | pulse
+  const [data, setData] = useState(initialData);
+  const [selectedDefect, setSelectedDefect] = useState(null);
+  const [selectedCard, setSelectedCard] = useState(null);
+  const [showNewDefect, setShowNewDefect] = useState(false);
+  const [bridgeFilter, setBridgeFilter] = useState("all");
+
+  const phaseIndex = (pid) => D_PHASES.findIndex(d => d.id === pid);
+
+  const bridgeItems = data.defects
+    .filter(d => d.linkedStory)
+    .map(d => ({ defect: d, story: data.agileItems.find(a => a.id === d.linkedStory) }));
+
+  const unlinkedDefects = data.defects.filter(d => !d.linkedStory);
+
+  return (
+    <div style={{ fontFamily: "'IBM Plex Mono', monospace", background: COLORS.bg, minHeight: "100vh", color: COLORS.text, display: "flex", flexDirection: "column" }}>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600&family=Bebas+Neue&display=swap');
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        ::-webkit-scrollbar { width: 4px; height: 4px; }
+        ::-webkit-scrollbar-track { background: ${COLORS.surface}; }
+        ::-webkit-scrollbar-thumb { background: ${COLORS.border}; border-radius: 2px; }
+        .card-hover { transition: all 0.15s ease; cursor: pointer; }
+        .card-hover:hover { border-color: ${COLORS.accent} !important; transform: translateY(-1px); }
+        .nav-btn { transition: all 0.15s ease; cursor: pointer; border: none; }
+        .nav-btn:hover { opacity: 0.9; }
+        .phase-step { transition: all 0.2s ease; cursor: pointer; }
+        .phase-step:hover { filter: brightness(1.3); }
+        .tag { font-size: 9px; padding: 2px 6px; border-radius: 3px; font-weight: 600; letter-spacing: 0.05em; }
+        .pulse-dot { animation: pulse 2s infinite; }
+        @keyframes pulse { 0%,100%{opacity:1;} 50%{opacity:0.3;} }
+        .slide-in { animation: slideIn 0.3s ease; }
+        @keyframes slideIn { from{opacity:0;transform:translateX(20px);} to{opacity:1;transform:translateX(0);} }
+      `}</style>
+
+      {/* TOP NAV */}
+      <div style={{ background: COLORS.surface, borderBottom: `1px solid ${COLORS.border}`, padding: "0 24px", display: "flex", alignItems: "center", height: 52, gap: 32, position: "sticky", top: 0, zIndex: 100 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <div style={{ width: 28, height: 28, background: COLORS.accent, borderRadius: 4, display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 16, color: "#fff", letterSpacing: 1 }}>FF</span>
+          </div>
+          <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 22, letterSpacing: 3, color: COLORS.text }}>FLOWFORGE</span>
+          <span style={{ fontSize: 9, color: COLORS.textMuted, background: COLORS.border, padding: "2px 6px", borderRadius: 3, letterSpacing: 1 }}>BETA</span>
+        </div>
+
+        <div style={{ display: "flex", gap: 2, marginLeft: 16 }}>
+          {[
+            { id: "board", label: "AGILE BOARD" },
+            { id: "defects", label: "8D TRACKER" },
+            { id: "bridge", label: "BRIDGE" },
+            { id: "pulse", label: "PULSE" },
+          ].map(n => (
+            <button key={n.id} className="nav-btn" onClick={() => setView(n.id)}
+              style={{ padding: "6px 14px", borderRadius: 4, fontSize: 11, letterSpacing: 1, fontWeight: 600, fontFamily: "inherit",
+                background: view === n.id ? COLORS.accent : "transparent",
+                color: view === n.id ? "#fff" : COLORS.textMuted,
+                borderBottom: view === n.id ? "none" : `1px solid transparent`,
+              }}>
+              {n.label}
+            </button>
+          ))}
+        </div>
+
+        <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 16 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <div className="pulse-dot" style={{ width: 7, height: 7, borderRadius: "50%", background: COLORS.green }} />
+            <span style={{ fontSize: 10, color: COLORS.textMuted }}>Sprint 12 · Active</span>
+          </div>
+          <div style={{ display: "flex", gap: -4 }}>
+            {["KW", "RK", "ML"].map(a => (
+              <div key={a} style={{ width: 28, height: 28, borderRadius: "50%", background: COLORS.border, border: `2px solid ${COLORS.surface}`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 9, fontWeight: 700, color: COLORS.accent }}>
+                {a}
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <div style={{ flex: 1, overflow: "hidden", display: "flex" }}>
+
+        {/* AGILE BOARD */}
+        {view === "board" && (
+          <div style={{ flex: 1, padding: "20px 24px", overflow: "auto" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 20 }}>
+              <div>
+                <div style={{ fontFamily: "'Bebas Neue'", fontSize: 28, letterSpacing: 2, lineHeight: 1 }}>AGILE BOARD</div>
+                <div style={{ fontSize: 10, color: COLORS.textMuted, marginTop: 2 }}>Sprint 12 · Feb 24 — Mar 7 · {data.agileItems.filter(a => a.col === "In Sprint" || a.col === "In Progress").length} items active</div>
+              </div>
+              <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
+                <SprintBadge sprint={data.sprints[0]} />
+              </div>
+            </div>
+
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 12, minWidth: 900 }}>
+              {AGILE_COLS.map(col => (
+                <div key={col} style={{ background: COLORS.surface, borderRadius: 8, border: `1px solid ${COLORS.border}`, overflow: "hidden" }}>
+                  <div style={{ padding: "10px 14px", borderBottom: `1px solid ${COLORS.border}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <span style={{ fontSize: 10, fontWeight: 600, letterSpacing: 1, color: COLORS.textDim }}>{col.toUpperCase()}</span>
+                    <span style={{ fontSize: 9, background: COLORS.border, padding: "1px 6px", borderRadius: 10, color: COLORS.textMuted }}>
+                      {data.agileItems.filter(a => a.col === col).length}
+                    </span>
+                  </div>
+                  <div style={{ padding: 8, display: "flex", flexDirection: "column", gap: 8, minHeight: 200 }}>
+                    {data.agileItems.filter(a => a.col === col).map(item => (
+                      <AgileCard key={item.id} item={item} onClick={() => setSelectedCard(item)} />
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* 8D TRACKER */}
+        {view === "defects" && (
+          <div style={{ flex: 1, padding: "20px 24px", overflow: "auto" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 20 }}>
+              <div>
+                <div style={{ fontFamily: "'Bebas Neue'", fontSize: 28, letterSpacing: 2, lineHeight: 1 }}>8D PROBLEM TRACKER</div>
+                <div style={{ fontSize: 10, color: COLORS.textMuted, marginTop: 2 }}>{data.defects.length} open defects · {data.defects.filter(d => d.phase === "D8").length} closed</div>
+              </div>
+              <button onClick={() => setShowNewDefect(true)} className="nav-btn"
+                style={{ marginLeft: "auto", background: COLORS.accent, color: "#fff", padding: "8px 16px", borderRadius: 6, fontSize: 11, letterSpacing: 1, fontWeight: 700, fontFamily: "inherit" }}>
+                + NEW 8D
+              </button>
+            </div>
+
+            {/* Phase Progress Strip */}
+            <div style={{ display: "flex", gap: 4, marginBottom: 20, overflowX: "auto", paddingBottom: 4 }}>
+              {D_PHASES.map(p => {
+                const count = data.defects.filter(d => d.phase === p.id).length;
+                return (
+                  <div key={p.id} className="phase-step" style={{ flex: 1, minWidth: 80, background: COLORS.surface, border: `1px solid ${count > 0 ? p.color : COLORS.border}`, borderRadius: 6, padding: "8px 10px", textAlign: "center" }}>
+                    <div style={{ fontSize: 14, fontWeight: 700, color: p.color, fontFamily: "'Bebas Neue'" }}>{p.label}</div>
+                    <div style={{ fontSize: 8, color: COLORS.textMuted, marginTop: 1, lineHeight: 1.2 }}>{p.name}</div>
+                    {count > 0 && <div style={{ marginTop: 4, fontSize: 10, fontWeight: 700, color: p.color }}>{count}</div>}
+                  </div>
+                );
+              })}
+            </div>
+
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              {data.defects.map(d => (
+                <DefectRow key={d.id} defect={d} onClick={() => setSelectedDefect(d)} />
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* BRIDGE VIEW */}
+        {view === "bridge" && (
+          <div style={{ flex: 1, padding: "20px 24px", overflow: "auto" }}>
+            <div style={{ marginBottom: 20 }}>
+              <div style={{ fontFamily: "'Bebas Neue'", fontSize: 28, letterSpacing: 2, lineHeight: 1 }}>THE BRIDGE</div>
+              <div style={{ fontSize: 10, color: COLORS.textMuted, marginTop: 2 }}>Connect 8D defects to Agile stories. Close the loop between quality and delivery.</div>
+            </div>
+
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 80px 1fr", gap: 0, marginBottom: 24 }}>
+              <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.accentDim}`, borderRadius: "8px 0 0 8px", padding: "10px 16px" }}>
+                <div style={{ fontSize: 10, fontWeight: 700, color: COLORS.accent, letterSpacing: 1, marginBottom: 2 }}>8D DEFECTS</div>
+                <div style={{ fontSize: 9, color: COLORS.textMuted }}>{data.defects.length} open problems</div>
+              </div>
+              <div style={{ background: COLORS.accentDim, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <span style={{ fontSize: 18, color: COLORS.accent }}>⇄</span>
+              </div>
+              <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.tealDim}`, borderRadius: "0 8px 8px 0", padding: "10px 16px" }}>
+                <div style={{ fontSize: 10, fontWeight: 700, color: COLORS.teal, letterSpacing: 1, marginBottom: 2 }}>AGILE STORIES</div>
+                <div style={{ fontSize: 9, color: COLORS.textMuted }}>{data.agileItems.length} items in backlog/sprint</div>
+              </div>
+            </div>
+
+            <div style={{ fontFamily: "'Bebas Neue'", fontSize: 14, letterSpacing: 2, color: COLORS.textMuted, marginBottom: 10 }}>ACTIVE BRIDGES</div>
+            {bridgeItems.map(({ defect, story }) => (
+              <BridgeLink key={defect.id} defect={defect} story={story} />
+            ))}
+
+            <div style={{ fontFamily: "'Bebas Neue'", fontSize: 14, letterSpacing: 2, color: COLORS.textMuted, margin: "24px 0 10px" }}>UNLINKED DEFECTS — NEEDS AGILE ACTION</div>
+            {unlinkedDefects.map(d => (
+              <div key={d.id} className="card-hover" onClick={() => setSelectedDefect(d)}
+                style={{ background: COLORS.surface, border: `1px dashed ${COLORS.border}`, borderRadius: 8, padding: "12px 16px", marginBottom: 8, display: "flex", alignItems: "center", gap: 12 }}>
+                <span style={{ fontSize: 11, color: severityColor(d.severity), fontWeight: 700 }}>{d.severity}</span>
+                <span style={{ fontSize: 11, color: COLORS.textMuted }}>{d.id}</span>
+                <span style={{ fontSize: 12, flex: 1 }}>{d.title}</span>
+                <button className="nav-btn" style={{ fontSize: 10, background: COLORS.tealDim, color: COLORS.teal, padding: "4px 10px", borderRadius: 4, letterSpacing: 1, fontFamily: "inherit" }}>
+                  CREATE STORY →
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* PULSE / ANALYTICS */}
+        {view === "pulse" && (
+          <div style={{ flex: 1, padding: "20px 24px", overflow: "auto" }}>
+            <div style={{ marginBottom: 20 }}>
+              <div style={{ fontFamily: "'Bebas Neue'", fontSize: 28, letterSpacing: 2, lineHeight: 1 }}>TEAM PULSE</div>
+              <div style={{ fontSize: 10, color: COLORS.textMuted, marginTop: 2 }}>Cross-methodology health — Agile velocity + 8D resolution rate</div>
+            </div>
+
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, marginBottom: 24 }}>
+              {[
+                { label: "SPRINT VELOCITY", value: "34", unit: "pts", sub: "Target 40", color: COLORS.teal },
+                { label: "8D OPEN", value: "4", unit: "defects", sub: "2 S1-S2", color: COLORS.accent },
+                { label: "BRIDGE RATE", value: "75%", unit: "", sub: "3 of 4 linked", color: COLORS.purple },
+                { label: "CLOSURE TIME", value: "18", unit: "days avg", sub: "8D resolution", color: COLORS.green },
+              ].map(m => (
+                <div key={m.label} style={{ background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: 8, padding: "16px 18px" }}>
+                  <div style={{ fontSize: 9, color: COLORS.textMuted, letterSpacing: 1, marginBottom: 8 }}>{m.label}</div>
+                  <div style={{ display: "flex", alignItems: "baseline", gap: 4 }}>
+                    <span style={{ fontFamily: "'Bebas Neue'", fontSize: 36, color: m.color, lineHeight: 1 }}>{m.value}</span>
+                    <span style={{ fontSize: 11, color: COLORS.textMuted }}>{m.unit}</span>
+                  </div>
+                  <div style={{ fontSize: 9, color: COLORS.textMuted, marginTop: 6 }}>{m.sub}</div>
+                </div>
+              ))}
+            </div>
+
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+              <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: 8, padding: 18 }}>
+                <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: 1, color: COLORS.textDim, marginBottom: 14 }}>8D PHASE DISTRIBUTION</div>
+                {D_PHASES.slice(0, 8).map(p => {
+                  const count = data.defects.filter(d => d.phase === p.id).length;
+                  const pct = (count / data.defects.length) * 100;
+                  return (
+                    <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
+                      <span style={{ fontSize: 10, color: p.color, width: 22, fontWeight: 700 }}>{p.id}</span>
+                      <div style={{ flex: 1, height: 6, background: COLORS.border, borderRadius: 3, overflow: "hidden" }}>
+                        <div style={{ width: `${pct}%`, height: "100%", background: p.color, borderRadius: 3, transition: "width 0.5s ease" }} />
+                      </div>
+                      <span style={{ fontSize: 9, color: COLORS.textMuted, width: 12 }}>{count}</span>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: 8, padding: 18 }}>
+                <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: 1, color: COLORS.textDim, marginBottom: 14 }}>SPRINT BURNDOWN SIMULATION</div>
+                <BurndownChart />
+              </div>
+            </div>
+
+            <div style={{ marginTop: 16, background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: 8, padding: 18 }}>
+              <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: 1, color: COLORS.textDim, marginBottom: 12 }}>DEFECT RECURRENCE RADAR</div>
+              <div style={{ display: "flex", gap: 10 }}>
+                {[
+                  { label: "Welding Process", count: 3, trend: "↑" },
+                  { label: "Sensor Calibration", count: 2, trend: "→" },
+                  { label: "Torque Spec", count: 2, trend: "↓" },
+                  { label: "Lubricant System", count: 1, trend: "↑" },
+                ].map(r => (
+                  <div key={r.label} style={{ flex: 1, background: COLORS.card, borderRadius: 6, padding: "10px 12px", border: `1px solid ${COLORS.border}` }}>
+                    <div style={{ fontSize: 10, color: COLORS.textDim, marginBottom: 4 }}>{r.label}</div>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <span style={{ fontFamily: "'Bebas Neue'", fontSize: 24, color: r.count >= 3 ? COLORS.red : r.count === 2 ? COLORS.accent : COLORS.green }}>{r.count}x</span>
+                      <span style={{ fontSize: 14, color: r.trend === "↑" ? COLORS.red : r.trend === "↓" ? COLORS.green : COLORS.yellow }}>{r.trend}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* DEFECT DETAIL PANEL */}
+      {selectedDefect && (
+        <div style={{ position: "fixed", top: 0, right: 0, width: 480, height: "100vh", background: COLORS.surface, borderLeft: `1px solid ${COLORS.border}`, zIndex: 200, overflow: "auto", padding: 24 }} className="slide-in">
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 20 }}>
+            <div>
+              <div style={{ fontSize: 9, color: COLORS.accent, letterSpacing: 1, marginBottom: 4 }}>8D DEFECT REPORT</div>
+              <div style={{ fontFamily: "'Bebas Neue'", fontSize: 22, letterSpacing: 2 }}>{selectedDefect.id}</div>
+            </div>
+            <button className="nav-btn" onClick={() => setSelectedDefect(null)} style={{ background: COLORS.border, color: COLORS.textMuted, padding: "4px 10px", borderRadius: 4, fontSize: 12, fontFamily: "inherit" }}>✕</button>
+          </div>
+
+          <div style={{ fontSize: 14, fontWeight: 600, color: COLORS.text, marginBottom: 12 }}>{selectedDefect.title}</div>
+          <div style={{ fontSize: 11, color: COLORS.textMuted, lineHeight: 1.6, marginBottom: 16 }}>{selectedDefect.description}</div>
+
+          <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+            <span style={{ fontSize: 10, padding: "3px 8px", borderRadius: 4, background: severityColor(selectedDefect.severity) + "22", color: severityColor(selectedDefect.severity), fontWeight: 700 }}>{selectedDefect.severity}</span>
+            <span style={{ fontSize: 10, padding: "3px 8px", borderRadius: 4, background: COLORS.border, color: COLORS.textDim }}>{selectedDefect.phase}</span>
+            <span style={{ fontSize: 10, padding: "3px 8px", borderRadius: 4, background: COLORS.border, color: COLORS.textDim }}>Due: {selectedDefect.dueDate}</span>
+          </div>
+
+          {/* Phase Progress */}
+          <div style={{ marginBottom: 20 }}>
+            <div style={{ fontSize: 9, letterSpacing: 1, color: COLORS.textMuted, marginBottom: 8 }}>PHASE PROGRESS</div>
+            <div style={{ display: "flex", gap: 2 }}>
+              {D_PHASES.map((p, i) => {
+                const current = phaseIndex(selectedDefect.phase);
+                const isDone = i <= current;
+                return (
+                  <div key={p.id} style={{ flex: 1, height: 4, borderRadius: 2, background: isDone ? p.color : COLORS.border, transition: "background 0.3s" }} />
+                );
+              })}
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between", marginTop: 4 }}>
+              <span style={{ fontSize: 8, color: COLORS.textMuted }}>D0</span>
+              <span style={{ fontSize: 8, color: COLORS.textMuted }}>Current: {selectedDefect.phase}</span>
+              <span style={{ fontSize: 8, color: COLORS.textMuted }}>D8</span>
+            </div>
+          </div>
+
+          {selectedDefect.containment && (
+            <DetailBlock label="D3 CONTAINMENT" value={selectedDefect.containment} color={COLORS.teal} />
+          )}
+          {selectedDefect.rootCause && (
+            <DetailBlock label="D4/D5 ROOT CAUSE" value={selectedDefect.rootCause} color={COLORS.purple} />
+          )}
+
+          {selectedDefect.linkedStory && (
+            <div style={{ marginTop: 16, background: COLORS.tealDim, border: `1px solid ${COLORS.teal}22`, borderRadius: 6, padding: "10px 14px" }}>
+              <div style={{ fontSize: 9, color: COLORS.teal, letterSpacing: 1, marginBottom: 4 }}>LINKED AGILE STORY</div>
+              <div style={{ fontSize: 12, color: COLORS.text }}>{data.agileItems.find(a => a.id === selectedDefect.linkedStory)?.title}</div>
+              <div style={{ fontSize: 9, color: COLORS.textMuted, marginTop: 2 }}>{selectedDefect.linkedStory}</div>
+            </div>
+          )}
+
+          <div style={{ marginTop: 16 }}>
+            <div style={{ fontSize: 9, letterSpacing: 1, color: COLORS.textMuted, marginBottom: 8 }}>TEAM</div>
+            <div style={{ display: "flex", gap: 6 }}>
+              {selectedDefect.team.map(m => (
+                <div key={m} style={{ padding: "4px 10px", background: COLORS.border, borderRadius: 4, fontSize: 11, fontWeight: 700, color: COLORS.accent }}>{m}</div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* AGILE CARD DETAIL */}
+      {selectedCard && (
+        <div style={{ position: "fixed", top: 0, right: 0, width: 380, height: "100vh", background: COLORS.surface, borderLeft: `1px solid ${COLORS.border}`, zIndex: 200, padding: 24 }} className="slide-in">
+          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 20 }}>
+            <div>
+              <div style={{ fontSize: 9, color: COLORS.teal, letterSpacing: 1, marginBottom: 4 }}>AGILE CARD</div>
+              <div style={{ fontFamily: "'Bebas Neue'", fontSize: 22, letterSpacing: 2 }}>{selectedCard.id}</div>
+            </div>
+            <button className="nav-btn" onClick={() => setSelectedCard(null)} style={{ background: COLORS.border, color: COLORS.textMuted, padding: "4px 10px", borderRadius: 4, fontSize: 12, fontFamily: "inherit" }}>✕</button>
+          </div>
+          <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 12 }}>{selectedCard.title}</div>
+          <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+            <span style={{ fontSize: 10, padding: "3px 8px", borderRadius: 4, background: typeColor(selectedCard.type) + "22", color: typeColor(selectedCard.type), fontWeight: 700 }}>{selectedCard.type}</span>
+            <span style={{ fontSize: 10, padding: "3px 8px", borderRadius: 4, background: priorityColor(selectedCard.priority) + "22", color: priorityColor(selectedCard.priority) }}>{selectedCard.priority}</span>
+            <span style={{ fontSize: 10, padding: "3px 8px", borderRadius: 4, background: COLORS.border, color: COLORS.textDim }}>{selectedCard.points} pts</span>
+          </div>
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 16 }}>
+            {selectedCard.tags.map(t => <span key={t} className="tag" style={{ background: COLORS.border, color: COLORS.textMuted }}>{t}</span>)}
+          </div>
+          {selectedCard.linkedDefect && (
+            <div style={{ background: COLORS.accentDim, border: `1px solid ${COLORS.accent}22`, borderRadius: 6, padding: "10px 14px" }}>
+              <div style={{ fontSize: 9, color: COLORS.accent, letterSpacing: 1, marginBottom: 4 }}>LINKED 8D DEFECT</div>
+              <div style={{ fontSize: 12, color: COLORS.text }}>{data.defects.find(d => d.id === selectedCard.linkedDefect)?.title}</div>
+              <div style={{ fontSize: 9, color: COLORS.textMuted, marginTop: 2 }}>{selectedCard.linkedDefect}</div>
+            </div>
+          )}
+          <div style={{ marginTop: 16 }}>
+            <div style={{ fontSize: 9, letterSpacing: 1, color: COLORS.textMuted, marginBottom: 6 }}>ASSIGNEE</div>
+            <div style={{ display: "inline-block", padding: "4px 12px", background: COLORS.border, borderRadius: 4, fontSize: 11, fontWeight: 700, color: COLORS.accent }}>{selectedCard.assignee}</div>
+          </div>
+          <div style={{ marginTop: 16 }}>
+            <div style={{ fontSize: 9, letterSpacing: 1, color: COLORS.textMuted, marginBottom: 6 }}>STATUS</div>
+            <div style={{ fontSize: 11, padding: "4px 12px", background: COLORS.tealDim, color: COLORS.teal, borderRadius: 4, display: "inline-block" }}>{selectedCard.col}</div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AgileCard({ item, onClick }) {
+  return (
+    <div className="card-hover" onClick={onClick}
+      style={{ background: COLORS.card, border: `1px solid ${COLORS.border}`, borderRadius: 6, padding: "10px 12px" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+        <span style={{ fontSize: 9, color: typeColor(item.type), fontWeight: 700 }}>{item.type.toUpperCase()}</span>
+        <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+          {item.linkedDefect && <span style={{ fontSize: 8, background: COLORS.accentDim, color: COLORS.accent, padding: "1px 4px", borderRadius: 2 }}>8D</span>}
+          <span style={{ fontSize: 9, color: COLORS.textMuted }}>{item.points}p</span>
+        </div>
+      </div>
+      <div style={{ fontSize: 11, color: COLORS.text, lineHeight: 1.4, marginBottom: 8 }}>{item.title}</div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <div style={{ display: "flex", gap: 4 }}>
+          {item.tags.slice(0, 2).map(t => <span key={t} className="tag" style={{ background: COLORS.border, color: COLORS.textMuted }}>{t}</span>)}
+        </div>
+        <div style={{ width: 22, height: 22, borderRadius: "50%", background: COLORS.border, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 8, fontWeight: 700, color: priorityColor(item.priority) }}>
+          {item.assignee}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DefectRow({ defect, onClick }) {
+  const phase = D_PHASES.find(p => p.id === defect.phase);
+  return (
+    <div className="card-hover" onClick={onClick}
+      style={{ background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: 8, padding: "14px 18px", display: "flex", alignItems: "center", gap: 14 }}>
+      <div style={{ textAlign: "center", minWidth: 36 }}>
+        <div style={{ fontSize: 11, fontWeight: 700, color: severityColor(defect.severity) }}>{defect.severity}</div>
+        <div style={{ fontSize: 8, color: COLORS.textMuted, marginTop: 1 }}>SEV</div>
+      </div>
+      <div style={{ minWidth: 70 }}>
+        <div style={{ fontSize: 10, color: COLORS.textMuted }}>{defect.id}</div>
+        <div style={{ fontSize: 9, color: phase?.color, fontWeight: 700, marginTop: 1 }}>{phase?.label} — {phase?.name}</div>
+      </div>
+      <div style={{ flex: 1 }}>
+        <div style={{ fontSize: 12, color: COLORS.text }}>{defect.title}</div>
+        <div style={{ fontSize: 9, color: COLORS.textMuted, marginTop: 3 }}>Owner: {defect.owner} · Due: {defect.dueDate}</div>
+      </div>
+      <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+        {defect.linkedStory && (
+          <span style={{ fontSize: 9, background: COLORS.tealDim, color: COLORS.teal, padding: "2px 7px", borderRadius: 3 }}>LINKED</span>
+        )}
+        <div style={{ display: "flex", gap: 2 }}>
+          {D_PHASES.map((p, i) => (
+            <div key={p.id} style={{ width: 5, height: 14, borderRadius: 2, background: phaseIndex(defect.phase) >= i ? p.color : COLORS.border }} />
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function phaseIndex(pid) {
+  return D_PHASES.findIndex(d => d.id === pid);
+}
+
+function BridgeLink({ defect, story }) {
+  if (!story) return null;
+  const phase = D_PHASES.find(p => p.id === defect.phase);
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "1fr 40px 1fr", gap: 0, marginBottom: 10, alignItems: "stretch" }}>
+      <div style={{ background: COLORS.card, border: `1px solid ${COLORS.accentDim}`, borderRadius: "8px 0 0 8px", padding: "12px 14px" }}>
+        <div style={{ fontSize: 9, color: COLORS.accent, letterSpacing: 1, marginBottom: 4 }}>{defect.id} · {defect.severity}</div>
+        <div style={{ fontSize: 11, color: COLORS.text }}>{defect.title}</div>
+        <div style={{ marginTop: 6, fontSize: 9, color: phase?.color }}>{phase?.label} — {phase?.name}</div>
+      </div>
+      <div style={{ background: COLORS.accentDim, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, color: COLORS.accent }}>⇄</div>
+      <div style={{ background: COLORS.card, border: `1px solid ${COLORS.tealDim}`, borderRadius: "0 8px 8px 0", padding: "12px 14px" }}>
+        <div style={{ fontSize: 9, color: COLORS.teal, letterSpacing: 1, marginBottom: 4 }}>{story.id} · {story.type}</div>
+        <div style={{ fontSize: 11, color: COLORS.text }}>{story.title}</div>
+        <div style={{ marginTop: 6, fontSize: 9, color: COLORS.textMuted }}>{story.col} · {story.points} pts</div>
+      </div>
+    </div>
+  );
+}
+
+function DetailBlock({ label, value, color }) {
+  return (
+    <div style={{ background: COLORS.card, border: `1px solid ${color}22`, borderRadius: 6, padding: "10px 14px", marginBottom: 10 }}>
+      <div style={{ fontSize: 9, color: color, letterSpacing: 1, marginBottom: 4 }}>{label}</div>
+      <div style={{ fontSize: 11, color: COLORS.textDim, lineHeight: 1.6 }}>{value}</div>
+    </div>
+  );
+}
+
+function SprintBadge({ sprint }) {
+  const pct = Math.round((sprint.velocity / sprint.target) * 100);
+  return (
+    <div style={{ background: COLORS.card, border: `1px solid ${COLORS.border}`, borderRadius: 8, padding: "8px 16px", display: "flex", gap: 16, alignItems: "center" }}>
+      <div>
+        <div style={{ fontSize: 9, color: COLORS.textMuted, letterSpacing: 1 }}>{sprint.name}</div>
+        <div style={{ fontSize: 9, color: COLORS.textDim }}>{sprint.start} → {sprint.end}</div>
+      </div>
+      <div>
+        <div style={{ fontSize: 9, color: COLORS.textMuted, marginBottom: 4 }}>VELOCITY {sprint.velocity}/{sprint.target}</div>
+        <div style={{ width: 80, height: 4, background: COLORS.border, borderRadius: 2 }}>
+          <div style={{ width: `${pct}%`, height: "100%", background: pct >= 80 ? COLORS.green : COLORS.accent, borderRadius: 2 }} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function BurndownChart() {
+  const ideal = [40, 35, 30, 24, 18, 12, 6, 0];
+  const actual = [40, 38, 33, 27, 22, 18, null, null];
+  const max = 40;
+  const h = 120;
+  const w = 280;
+  const pts = (arr) => arr.map((v, i) => v != null ? `${(i / 7) * w},${h - (v / max) * h}` : null).filter(Boolean).join(" ");
+
+  return (
+    <svg viewBox={`0 0 ${w} ${h}`} width="100%" height={h}>
+      <polyline points={pts(ideal)} fill="none" stroke={COLORS.border} strokeWidth="1.5" strokeDasharray="4 3" />
+      <polyline points={pts(actual)} fill="none" stroke={COLORS.teal} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+      {actual.map((v, i) => v != null && (
+        <circle key={i} cx={(i / 7) * w} cy={h - (v / max) * h} r="3" fill={COLORS.teal} />
+      ))}
+      <text x="0" y={h - 2} fontSize="8" fill={COLORS.textMuted}>Day 1</text>
+      <text x={w - 20} y={h - 2} fontSize="8" fill={COLORS.textMuted}>Day 7</text>
+    </svg>
+  );
+}
