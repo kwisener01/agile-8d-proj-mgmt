@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
 const COLORS = {
   bg: "#0D0F14",
@@ -95,11 +95,64 @@ const typeColor = (t) => ({ Bug: COLORS.red, Story: COLORS.teal, Feature: COLORS
 
 export default function FlowForge() {
   const [view, setView] = useState("board"); // board | defects | bridge | pulse
-  const [data, setData] = useState(initialData);
+  const [data, setData] = useState({ agileItems: [], defects: [], sprints: [] });
+  const [loading, setLoading] = useState(true);
   const [selectedDefect, setSelectedDefect] = useState(null);
+
+  useEffect(() => {
+    Promise.all([
+      fetch("/api/agile").then((r) => r.json()),
+      fetch("/api/defects").then((r) => r.json()),
+      fetch("/api/sprints").then((r) => r.json()),
+    ]).then(([agileItems, defects, sprints]) => {
+      setData({ agileItems, defects, sprints });
+      setLoading(false);
+    });
+  }, []);
   const [selectedCard, setSelectedCard] = useState(null);
   const [showNewDefect, setShowNewDefect] = useState(false);
+  const [newDefectForm, setNewDefectForm] = useState({ title: "", severity: "S2", owner: "", description: "", dueDate: "" });
   const [bridgeFilter, setBridgeFilter] = useState("all");
+
+  const moveCard = async (id, col) => {
+    await fetch(`/api/agile/${id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ col }) });
+    setData(d => ({ ...d, agileItems: d.agileItems.map(a => a.id === id ? { ...a, col } : a) }));
+    setSelectedCard(c => c?.id === id ? { ...c, col } : c);
+  };
+
+  const advancePhase = async (id, dir) => {
+    const defect = data.defects.find(d => d.id === id);
+    const newIdx = Math.max(0, Math.min(8, phaseIndex(defect.phase) + dir));
+    const newPhase = D_PHASES[newIdx].id;
+    await fetch(`/api/defects/${id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ phase: newPhase }) });
+    setData(d => ({ ...d, defects: d.defects.map(def => def.id === id ? { ...def, phase: newPhase } : def) }));
+    setSelectedDefect(d => d?.id === id ? { ...d, phase: newPhase } : d);
+  };
+
+  const submitNewDefect = async () => {
+    if (!newDefectForm.title || !newDefectForm.owner) return;
+    const id = `8D-${String(data.defects.length + 1).padStart(3, "0")}`;
+    const body = { ...newDefectForm, id, phase: "D0", team: JSON.stringify([newDefectForm.owner]), containment: "", rootCause: "", bridged: false };
+    const res = await fetch("/api/defects", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    const created = await res.json();
+    setData(d => ({ ...d, defects: [...d.defects, created] }));
+    setShowNewDefect(false);
+    setNewDefectForm({ title: "", severity: "S2", owner: "", description: "", dueDate: "" });
+  };
+
+  const createStoryFromDefect = async (defect) => {
+    const id = `A${Date.now()}`;
+    const priority = { S1: "Critical", S2: "High", S3: "Med", S4: "Low" }[defect.severity] || "Med";
+    const body = { id, title: `Fix: ${defect.title}`, type: "Bug", points: 3, assignee: defect.owner, col: "Backlog", priority, tags: ["8D", "quality"], linkedDefectId: defect.id };
+    const res = await fetch("/api/agile", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    const created = await res.json();
+    await fetch(`/api/defects/${defect.id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ bridged: true }) });
+    setData(d => ({
+      ...d,
+      agileItems: [...d.agileItems, created],
+      defects: d.defects.map(def => def.id === defect.id ? { ...def, linkedStory: created.id, bridged: true } : def),
+    }));
+  };
 
   const phaseIndex = (pid) => D_PHASES.findIndex(d => d.id === pid);
 
@@ -109,27 +162,16 @@ export default function FlowForge() {
 
   const unlinkedDefects = data.defects.filter(d => !d.linkedStory);
 
+  if (loading) {
+    return (
+      <div style={{ fontFamily: "'IBM Plex Mono', monospace", background: COLORS.bg, minHeight: "100vh", color: COLORS.textMuted, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, letterSpacing: 2 }}>
+        LOADING...
+      </div>
+    );
+  }
+
   return (
     <div style={{ fontFamily: "'IBM Plex Mono', monospace", background: COLORS.bg, minHeight: "100vh", color: COLORS.text, display: "flex", flexDirection: "column" }}>
-      <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600&family=Bebas+Neue&display=swap');
-        * { box-sizing: border-box; margin: 0; padding: 0; }
-        ::-webkit-scrollbar { width: 4px; height: 4px; }
-        ::-webkit-scrollbar-track { background: ${COLORS.surface}; }
-        ::-webkit-scrollbar-thumb { background: ${COLORS.border}; border-radius: 2px; }
-        .card-hover { transition: all 0.15s ease; cursor: pointer; }
-        .card-hover:hover { border-color: ${COLORS.accent} !important; transform: translateY(-1px); }
-        .nav-btn { transition: all 0.15s ease; cursor: pointer; border: none; }
-        .nav-btn:hover { opacity: 0.9; }
-        .phase-step { transition: all 0.2s ease; cursor: pointer; }
-        .phase-step:hover { filter: brightness(1.3); }
-        .tag { font-size: 9px; padding: 2px 6px; border-radius: 3px; font-weight: 600; letter-spacing: 0.05em; }
-        .pulse-dot { animation: pulse 2s infinite; }
-        @keyframes pulse { 0%,100%{opacity:1;} 50%{opacity:0.3;} }
-        .slide-in { animation: slideIn 0.3s ease; }
-        @keyframes slideIn { from{opacity:0;transform:translateX(20px);} to{opacity:1;transform:translateX(0);} }
-      `}</style>
-
       {/* TOP NAV */}
       <div style={{ background: COLORS.surface, borderBottom: `1px solid ${COLORS.border}`, padding: "0 24px", display: "flex", alignItems: "center", height: 52, gap: 32, position: "sticky", top: 0, zIndex: 100 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -159,10 +201,12 @@ export default function FlowForge() {
         </div>
 
         <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 16 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            <div className="pulse-dot" style={{ width: 7, height: 7, borderRadius: "50%", background: COLORS.green }} />
-            <span style={{ fontSize: 10, color: COLORS.textMuted }}>Sprint 12 · Active</span>
-          </div>
+          {data.sprints.filter(s => s.status === "active").map(s => (
+            <div key={s.id} style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <div className="pulse-dot" style={{ width: 7, height: 7, borderRadius: "50%", background: COLORS.green }} />
+              <span style={{ fontSize: 10, color: COLORS.textMuted }}>{s.name} · Active</span>
+            </div>
+          ))}
           <div style={{ display: "flex", gap: -4 }}>
             {["KW", "RK", "ML"].map(a => (
               <div key={a} style={{ width: 28, height: 28, borderRadius: "50%", background: COLORS.border, border: `2px solid ${COLORS.surface}`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 9, fontWeight: 700, color: COLORS.accent }}>
@@ -278,7 +322,7 @@ export default function FlowForge() {
                 <span style={{ fontSize: 11, color: severityColor(d.severity), fontWeight: 700 }}>{d.severity}</span>
                 <span style={{ fontSize: 11, color: COLORS.textMuted }}>{d.id}</span>
                 <span style={{ fontSize: 12, flex: 1 }}>{d.title}</span>
-                <button className="nav-btn" style={{ fontSize: 10, background: COLORS.tealDim, color: COLORS.teal, padding: "4px 10px", borderRadius: 4, letterSpacing: 1, fontFamily: "inherit" }}>
+                <button className="nav-btn" onClick={() => createStoryFromDefect(d)} style={{ fontSize: 10, background: COLORS.tealDim, color: COLORS.teal, padding: "4px 10px", borderRadius: 4, letterSpacing: 1, fontFamily: "inherit" }}>
                   CREATE STORY →
                 </button>
               </div>
@@ -396,6 +440,18 @@ export default function FlowForge() {
               <span style={{ fontSize: 8, color: COLORS.textMuted }}>Current: {selectedDefect.phase}</span>
               <span style={{ fontSize: 8, color: COLORS.textMuted }}>D8</span>
             </div>
+            <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+              <button className="nav-btn" disabled={phaseIndex(selectedDefect.phase) === 0}
+                onClick={() => advancePhase(selectedDefect.id, -1)}
+                style={{ flex: 1, padding: "6px 0", fontSize: 10, borderRadius: 4, background: COLORS.border, color: COLORS.textMuted, opacity: phaseIndex(selectedDefect.phase) === 0 ? 0.4 : 1, fontFamily: "inherit", letterSpacing: 1 }}>
+                ← PREV
+              </button>
+              <button className="nav-btn" disabled={phaseIndex(selectedDefect.phase) === 8}
+                onClick={() => advancePhase(selectedDefect.id, 1)}
+                style={{ flex: 1, padding: "6px 0", fontSize: 10, borderRadius: 4, background: COLORS.accent, color: "#fff", opacity: phaseIndex(selectedDefect.phase) === 8 ? 0.4 : 1, fontFamily: "inherit", letterSpacing: 1 }}>
+                NEXT PHASE →
+              </button>
+            </div>
           </div>
 
           {selectedDefect.containment && (
@@ -424,6 +480,51 @@ export default function FlowForge() {
         </div>
       )}
 
+      {/* NEW 8D FORM */}
+      {showNewDefect && (
+        <div style={{ position: "fixed", top: 0, right: 0, width: 440, height: "100vh", background: COLORS.surface, borderLeft: `1px solid ${COLORS.border}`, zIndex: 200, overflow: "auto", padding: 24 }} className="slide-in">
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
+            <div style={{ fontFamily: "'Bebas Neue'", fontSize: 22, letterSpacing: 2 }}>NEW 8D REPORT</div>
+            <button className="nav-btn" onClick={() => setShowNewDefect(false)} style={{ background: COLORS.border, color: COLORS.textMuted, padding: "4px 10px", borderRadius: 4, fontSize: 12, fontFamily: "inherit" }}>✕</button>
+          </div>
+          {[
+            { label: "TITLE", key: "title", type: "text", placeholder: "Describe the problem..." },
+            { label: "OWNER", key: "owner", type: "text", placeholder: "Initials e.g. KW" },
+            { label: "DUE DATE", key: "dueDate", type: "date", placeholder: "" },
+          ].map(({ label, key, type, placeholder }) => (
+            <div key={key} style={{ marginBottom: 16 }}>
+              <div style={{ fontSize: 9, letterSpacing: 1, color: COLORS.textMuted, marginBottom: 6 }}>{label}</div>
+              <input type={type} placeholder={placeholder} value={newDefectForm[key]}
+                onChange={e => setNewDefectForm(f => ({ ...f, [key]: e.target.value }))}
+                style={{ width: "100%", background: COLORS.card, border: `1px solid ${COLORS.border}`, borderRadius: 4, padding: "8px 10px", color: COLORS.text, fontSize: 12, fontFamily: "inherit", outline: "none" }} />
+            </div>
+          ))}
+          <div style={{ marginBottom: 16 }}>
+            <div style={{ fontSize: 9, letterSpacing: 1, color: COLORS.textMuted, marginBottom: 6 }}>SEVERITY</div>
+            <div style={{ display: "flex", gap: 6 }}>
+              {["S1", "S2", "S3", "S4"].map(s => (
+                <button key={s} className="nav-btn" onClick={() => setNewDefectForm(f => ({ ...f, severity: s }))}
+                  style={{ flex: 1, padding: "6px 0", fontSize: 11, fontWeight: 700, borderRadius: 4, fontFamily: "inherit",
+                    background: newDefectForm.severity === s ? severityColor(s) : COLORS.border,
+                    color: newDefectForm.severity === s ? "#fff" : COLORS.textMuted }}>
+                  {s}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div style={{ marginBottom: 24 }}>
+            <div style={{ fontSize: 9, letterSpacing: 1, color: COLORS.textMuted, marginBottom: 6 }}>DESCRIPTION</div>
+            <textarea rows={4} placeholder="Detailed problem description..." value={newDefectForm.description}
+              onChange={e => setNewDefectForm(f => ({ ...f, description: e.target.value }))}
+              style={{ width: "100%", background: COLORS.card, border: `1px solid ${COLORS.border}`, borderRadius: 4, padding: "8px 10px", color: COLORS.text, fontSize: 12, fontFamily: "inherit", resize: "vertical", outline: "none" }} />
+          </div>
+          <button className="nav-btn" onClick={submitNewDefect}
+            style={{ width: "100%", padding: "10px 0", background: COLORS.accent, color: "#fff", borderRadius: 6, fontSize: 12, fontWeight: 700, letterSpacing: 1, fontFamily: "inherit" }}>
+            CREATE 8D REPORT
+          </button>
+        </div>
+      )}
+
       {/* AGILE CARD DETAIL */}
       {selectedCard && (
         <div style={{ position: "fixed", top: 0, right: 0, width: 380, height: "100vh", background: COLORS.surface, borderLeft: `1px solid ${COLORS.border}`, zIndex: 200, padding: 24 }} className="slide-in">
@@ -443,11 +544,11 @@ export default function FlowForge() {
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 16 }}>
             {selectedCard.tags.map(t => <span key={t} className="tag" style={{ background: COLORS.border, color: COLORS.textMuted }}>{t}</span>)}
           </div>
-          {selectedCard.linkedDefect && (
+          {selectedCard.linkedDefectId && (
             <div style={{ background: COLORS.accentDim, border: `1px solid ${COLORS.accent}22`, borderRadius: 6, padding: "10px 14px" }}>
               <div style={{ fontSize: 9, color: COLORS.accent, letterSpacing: 1, marginBottom: 4 }}>LINKED 8D DEFECT</div>
-              <div style={{ fontSize: 12, color: COLORS.text }}>{data.defects.find(d => d.id === selectedCard.linkedDefect)?.title}</div>
-              <div style={{ fontSize: 9, color: COLORS.textMuted, marginTop: 2 }}>{selectedCard.linkedDefect}</div>
+              <div style={{ fontSize: 12, color: COLORS.text }}>{data.defects.find(d => d.id === selectedCard.linkedDefectId)?.title}</div>
+              <div style={{ fontSize: 9, color: COLORS.textMuted, marginTop: 2 }}>{selectedCard.linkedDefectId}</div>
             </div>
           )}
           <div style={{ marginTop: 16 }}>
@@ -457,6 +558,17 @@ export default function FlowForge() {
           <div style={{ marginTop: 16 }}>
             <div style={{ fontSize: 9, letterSpacing: 1, color: COLORS.textMuted, marginBottom: 6 }}>STATUS</div>
             <div style={{ fontSize: 11, padding: "4px 12px", background: COLORS.tealDim, color: COLORS.teal, borderRadius: 4, display: "inline-block" }}>{selectedCard.col}</div>
+          </div>
+          <div style={{ marginTop: 16 }}>
+            <div style={{ fontSize: 9, letterSpacing: 1, color: COLORS.textMuted, marginBottom: 6 }}>MOVE TO</div>
+            <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+              {AGILE_COLS.filter(c => c !== selectedCard.col).map(col => (
+                <button key={col} className="nav-btn" onClick={() => moveCard(selectedCard.id, col)}
+                  style={{ fontSize: 9, padding: "4px 10px", borderRadius: 4, background: COLORS.border, color: COLORS.textDim, fontFamily: "inherit", letterSpacing: 0.5 }}>
+                  {col}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
       )}
@@ -471,7 +583,7 @@ function AgileCard({ item, onClick }) {
       <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
         <span style={{ fontSize: 9, color: typeColor(item.type), fontWeight: 700 }}>{item.type.toUpperCase()}</span>
         <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-          {item.linkedDefect && <span style={{ fontSize: 8, background: COLORS.accentDim, color: COLORS.accent, padding: "1px 4px", borderRadius: 2 }}>8D</span>}
+          {item.linkedDefectId && <span style={{ fontSize: 8, background: COLORS.accentDim, color: COLORS.accent, padding: "1px 4px", borderRadius: 2 }}>8D</span>}
           <span style={{ fontSize: 9, color: COLORS.textMuted }}>{item.points}p</span>
         </div>
       </div>

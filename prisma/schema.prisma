@@ -1,0 +1,51 @@
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["driverAdapters"]
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("TURSO_DATABASE_URL")
+}
+
+model Sprint {
+  id         String      @id
+  name       String
+  start      String
+  end        String
+  velocity   Int         @default(0)
+  target     Int
+  status     String
+  agileItems AgileItem[]
+}
+
+model AgileItem {
+  id             String  @id
+  title          String
+  type           String
+  points         Int
+  assignee       String
+  col            String
+  priority       String
+  tags           String
+  linkedDefectId String?
+  defect         Defect? @relation(fields: [linkedDefectId], references: [id])
+  sprintId       String?
+  sprint         Sprint? @relation(fields: [sprintId], references: [id])
+}
+
+model Defect {
+  id          String      @id
+  title       String
+  severity    String
+  phase       String
+  owner       String
+  team        String
+  created     String
+  dueDate     String
+  containment String
+  rootCause   String
+  description String
+  bridged     Boolean     @default(false)
+  agileItems  AgileItem[]
+}
