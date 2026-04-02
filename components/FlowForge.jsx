@@ -110,8 +110,14 @@ export default function FlowForge() {
     });
   }, []);
   const [selectedCard, setSelectedCard] = useState(null);
+  const [editingCard, setEditingCard] = useState(false);
+  const [cardEditForm, setCardEditForm] = useState({});
+  const [showNewCard, setShowNewCard] = useState(false);
+  const [newCardForm, setNewCardForm] = useState({ title: "", type: "Story", points: 3, assignee: "", priority: "Med", col: "Backlog", tags: "" });
   const [showNewDefect, setShowNewDefect] = useState(false);
   const [newDefectForm, setNewDefectForm] = useState({ title: "", severity: "S2", owner: "", description: "", dueDate: "" });
+  const [editingDefect, setEditingDefect] = useState(false);
+  const [defectEditForm, setDefectEditForm] = useState({});
   const [bridgeFilter, setBridgeFilter] = useState("all");
 
   const moveCard = async (id, col) => {
@@ -152,6 +158,46 @@ export default function FlowForge() {
       agileItems: [...d.agileItems, created],
       defects: d.defects.map(def => def.id === defect.id ? { ...def, linkedStory: created.id, bridged: true } : def),
     }));
+  };
+
+  const submitNewCard = async () => {
+    if (!newCardForm.title || !newCardForm.assignee) return;
+    const id = `A${Date.now()}`;
+    const body = { ...newCardForm, id, points: Number(newCardForm.points), tags: newCardForm.tags.split(",").map(t => t.trim()).filter(Boolean) };
+    const res = await fetch("/api/agile", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    const created = await res.json();
+    setData(d => ({ ...d, agileItems: [...d.agileItems, created] }));
+    setShowNewCard(false);
+    setNewCardForm({ title: "", type: "Story", points: 3, assignee: "", priority: "Med", col: "Backlog", tags: "" });
+  };
+
+  const deleteCard = async (id) => {
+    await fetch(`/api/agile/${id}`, { method: "DELETE" });
+    setData(d => ({ ...d, agileItems: d.agileItems.filter(a => a.id !== id) }));
+    setSelectedCard(null);
+  };
+
+  const saveCardEdit = async () => {
+    const body = { ...cardEditForm, points: Number(cardEditForm.points), tags: typeof cardEditForm.tags === "string" ? cardEditForm.tags.split(",").map(t => t.trim()).filter(Boolean) : cardEditForm.tags };
+    const res = await fetch(`/api/agile/${cardEditForm.id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    const updated = await res.json();
+    setData(d => ({ ...d, agileItems: d.agileItems.map(a => a.id === updated.id ? updated : a) }));
+    setSelectedCard(updated);
+    setEditingCard(false);
+  };
+
+  const deleteDefect = async (id) => {
+    await fetch(`/api/defects/${id}`, { method: "DELETE" });
+    setData(d => ({ ...d, defects: d.defects.filter(def => def.id !== id) }));
+    setSelectedDefect(null);
+  };
+
+  const saveDefectEdit = async () => {
+    const res = await fetch(`/api/defects/${defectEditForm.id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(defectEditForm) });
+    const updated = await res.json();
+    setData(d => ({ ...d, defects: d.defects.map(def => def.id === updated.id ? updated : def) }));
+    setSelectedDefect(updated);
+    setEditingDefect(false);
   };
 
   const phaseIndex = (pid) => D_PHASES.findIndex(d => d.id === pid);
@@ -227,8 +273,12 @@ export default function FlowForge() {
                 <div style={{ fontFamily: "'Bebas Neue'", fontSize: 28, letterSpacing: 2, lineHeight: 1 }}>AGILE BOARD</div>
                 <div style={{ fontSize: 10, color: COLORS.textMuted, marginTop: 2 }}>Sprint 12 · Feb 24 — Mar 7 · {data.agileItems.filter(a => a.col === "In Sprint" || a.col === "In Progress").length} items active</div>
               </div>
-              <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
-                <SprintBadge sprint={data.sprints[0]} />
+              <div style={{ marginLeft: "auto", display: "flex", gap: 8, alignItems: "center" }}>
+                {data.sprints[0] && <SprintBadge sprint={data.sprints[0]} />}
+                <button onClick={() => setShowNewCard(true)} className="nav-btn"
+                  style={{ background: COLORS.teal, color: "#fff", padding: "8px 16px", borderRadius: 6, fontSize: 11, letterSpacing: 1, fontWeight: 700, fontFamily: "inherit" }}>
+                  + NEW STORY
+                </button>
               </div>
             </div>
 
@@ -411,72 +461,182 @@ export default function FlowForge() {
               <div style={{ fontSize: 9, color: COLORS.accent, letterSpacing: 1, marginBottom: 4 }}>8D DEFECT REPORT</div>
               <div style={{ fontFamily: "'Bebas Neue'", fontSize: 22, letterSpacing: 2 }}>{selectedDefect.id}</div>
             </div>
-            <button className="nav-btn" onClick={() => setSelectedDefect(null)} style={{ background: COLORS.border, color: COLORS.textMuted, padding: "4px 10px", borderRadius: 4, fontSize: 12, fontFamily: "inherit" }}>✕</button>
-          </div>
-
-          <div style={{ fontSize: 14, fontWeight: 600, color: COLORS.text, marginBottom: 12 }}>{selectedDefect.title}</div>
-          <div style={{ fontSize: 11, color: COLORS.textMuted, lineHeight: 1.6, marginBottom: 16 }}>{selectedDefect.description}</div>
-
-          <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
-            <span style={{ fontSize: 10, padding: "3px 8px", borderRadius: 4, background: severityColor(selectedDefect.severity) + "22", color: severityColor(selectedDefect.severity), fontWeight: 700 }}>{selectedDefect.severity}</span>
-            <span style={{ fontSize: 10, padding: "3px 8px", borderRadius: 4, background: COLORS.border, color: COLORS.textDim }}>{selectedDefect.phase}</span>
-            <span style={{ fontSize: 10, padding: "3px 8px", borderRadius: 4, background: COLORS.border, color: COLORS.textDim }}>Due: {selectedDefect.dueDate}</span>
-          </div>
-
-          {/* Phase Progress */}
-          <div style={{ marginBottom: 20 }}>
-            <div style={{ fontSize: 9, letterSpacing: 1, color: COLORS.textMuted, marginBottom: 8 }}>PHASE PROGRESS</div>
-            <div style={{ display: "flex", gap: 2 }}>
-              {D_PHASES.map((p, i) => {
-                const current = phaseIndex(selectedDefect.phase);
-                const isDone = i <= current;
-                return (
-                  <div key={p.id} style={{ flex: 1, height: 4, borderRadius: 2, background: isDone ? p.color : COLORS.border, transition: "background 0.3s" }} />
-                );
-              })}
-            </div>
-            <div style={{ display: "flex", justifyContent: "space-between", marginTop: 4 }}>
-              <span style={{ fontSize: 8, color: COLORS.textMuted }}>D0</span>
-              <span style={{ fontSize: 8, color: COLORS.textMuted }}>Current: {selectedDefect.phase}</span>
-              <span style={{ fontSize: 8, color: COLORS.textMuted }}>D8</span>
-            </div>
-            <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
-              <button className="nav-btn" disabled={phaseIndex(selectedDefect.phase) === 0}
-                onClick={() => advancePhase(selectedDefect.id, -1)}
-                style={{ flex: 1, padding: "6px 0", fontSize: 10, borderRadius: 4, background: COLORS.border, color: COLORS.textMuted, opacity: phaseIndex(selectedDefect.phase) === 0 ? 0.4 : 1, fontFamily: "inherit", letterSpacing: 1 }}>
-                ← PREV
-              </button>
-              <button className="nav-btn" disabled={phaseIndex(selectedDefect.phase) === 8}
-                onClick={() => advancePhase(selectedDefect.id, 1)}
-                style={{ flex: 1, padding: "6px 0", fontSize: 10, borderRadius: 4, background: COLORS.accent, color: "#fff", opacity: phaseIndex(selectedDefect.phase) === 8 ? 0.4 : 1, fontFamily: "inherit", letterSpacing: 1 }}>
-                NEXT PHASE →
-              </button>
-            </div>
-          </div>
-
-          {selectedDefect.containment && (
-            <DetailBlock label="D3 CONTAINMENT" value={selectedDefect.containment} color={COLORS.teal} />
-          )}
-          {selectedDefect.rootCause && (
-            <DetailBlock label="D4/D5 ROOT CAUSE" value={selectedDefect.rootCause} color={COLORS.purple} />
-          )}
-
-          {selectedDefect.linkedStory && (
-            <div style={{ marginTop: 16, background: COLORS.tealDim, border: `1px solid ${COLORS.teal}22`, borderRadius: 6, padding: "10px 14px" }}>
-              <div style={{ fontSize: 9, color: COLORS.teal, letterSpacing: 1, marginBottom: 4 }}>LINKED AGILE STORY</div>
-              <div style={{ fontSize: 12, color: COLORS.text }}>{data.agileItems.find(a => a.id === selectedDefect.linkedStory)?.title}</div>
-              <div style={{ fontSize: 9, color: COLORS.textMuted, marginTop: 2 }}>{selectedDefect.linkedStory}</div>
-            </div>
-          )}
-
-          <div style={{ marginTop: 16 }}>
-            <div style={{ fontSize: 9, letterSpacing: 1, color: COLORS.textMuted, marginBottom: 8 }}>TEAM</div>
             <div style={{ display: "flex", gap: 6 }}>
-              {selectedDefect.team.map(m => (
-                <div key={m} style={{ padding: "4px 10px", background: COLORS.border, borderRadius: 4, fontSize: 11, fontWeight: 700, color: COLORS.accent }}>{m}</div>
+              {!editingDefect && (
+                <button className="nav-btn" onClick={() => { setDefectEditForm({ ...selectedDefect, team: selectedDefect.team.join(", ") }); setEditingDefect(true); }}
+                  style={{ background: COLORS.accentDim, color: COLORS.accent, padding: "4px 10px", borderRadius: 4, fontSize: 10, fontFamily: "inherit", letterSpacing: 1 }}>EDIT</button>
+              )}
+              <button className="nav-btn" onClick={() => { setSelectedDefect(null); setEditingDefect(false); }} style={{ background: COLORS.border, color: COLORS.textMuted, padding: "4px 10px", borderRadius: 4, fontSize: 12, fontFamily: "inherit" }}>✕</button>
+            </div>
+          </div>
+
+          {editingDefect ? (
+            <div>
+              {[
+                { label: "TITLE", key: "title", type: "text" },
+                { label: "OWNER", key: "owner", type: "text" },
+                { label: "DUE DATE", key: "dueDate", type: "date" },
+                { label: "TEAM (comma-separated)", key: "team", type: "text" },
+              ].map(({ label, key, type }) => (
+                <div key={key} style={{ marginBottom: 14 }}>
+                  <div style={{ fontSize: 9, letterSpacing: 1, color: COLORS.textMuted, marginBottom: 5 }}>{label}</div>
+                  <input type={type} value={defectEditForm[key] ?? ""} onChange={e => setDefectEditForm(f => ({ ...f, [key]: e.target.value }))}
+                    style={{ width: "100%", background: COLORS.card, border: `1px solid ${COLORS.border}`, borderRadius: 4, padding: "7px 10px", color: COLORS.text, fontSize: 12, fontFamily: "inherit", outline: "none" }} />
+                </div>
+              ))}
+              <div style={{ marginBottom: 14 }}>
+                <div style={{ fontSize: 9, letterSpacing: 1, color: COLORS.textMuted, marginBottom: 5 }}>SEVERITY</div>
+                <div style={{ display: "flex", gap: 4 }}>
+                  {["S1", "S2", "S3", "S4"].map(s => (
+                    <button key={s} className="nav-btn" onClick={() => setDefectEditForm(f => ({ ...f, severity: s }))}
+                      style={{ flex: 1, padding: "5px 0", fontSize: 11, fontWeight: 700, borderRadius: 4, fontFamily: "inherit", background: defectEditForm.severity === s ? severityColor(s) : COLORS.border, color: defectEditForm.severity === s ? "#fff" : COLORS.textMuted }}>{s}</button>
+                  ))}
+                </div>
+              </div>
+              {[
+                { label: "DESCRIPTION", key: "description" },
+                { label: "D3 CONTAINMENT", key: "containment" },
+                { label: "D4/D5 ROOT CAUSE", key: "rootCause" },
+              ].map(({ label, key }) => (
+                <div key={key} style={{ marginBottom: 14 }}>
+                  <div style={{ fontSize: 9, letterSpacing: 1, color: COLORS.textMuted, marginBottom: 5 }}>{label}</div>
+                  <textarea rows={3} value={defectEditForm[key] ?? ""} onChange={e => setDefectEditForm(f => ({ ...f, [key]: e.target.value }))}
+                    style={{ width: "100%", background: COLORS.card, border: `1px solid ${COLORS.border}`, borderRadius: 4, padding: "7px 10px", color: COLORS.text, fontSize: 12, fontFamily: "inherit", resize: "vertical", outline: "none" }} />
+                </div>
+              ))}
+              <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+                <button className="nav-btn" onClick={saveDefectEdit}
+                  style={{ flex: 1, padding: "8px 0", background: COLORS.accent, color: "#fff", borderRadius: 6, fontSize: 11, fontWeight: 700, letterSpacing: 1, fontFamily: "inherit" }}>SAVE</button>
+                <button className="nav-btn" onClick={() => setEditingDefect(false)}
+                  style={{ padding: "8px 14px", background: COLORS.border, color: COLORS.textMuted, borderRadius: 6, fontSize: 11, fontFamily: "inherit" }}>CANCEL</button>
+              </div>
+            </div>
+          ) : (
+            <>
+              <div style={{ fontSize: 14, fontWeight: 600, color: COLORS.text, marginBottom: 12 }}>{selectedDefect.title}</div>
+              <div style={{ fontSize: 11, color: COLORS.textMuted, lineHeight: 1.6, marginBottom: 16 }}>{selectedDefect.description}</div>
+
+              <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+                <span style={{ fontSize: 10, padding: "3px 8px", borderRadius: 4, background: severityColor(selectedDefect.severity) + "22", color: severityColor(selectedDefect.severity), fontWeight: 700 }}>{selectedDefect.severity}</span>
+                <span style={{ fontSize: 10, padding: "3px 8px", borderRadius: 4, background: COLORS.border, color: COLORS.textDim }}>{selectedDefect.phase}</span>
+                <span style={{ fontSize: 10, padding: "3px 8px", borderRadius: 4, background: COLORS.border, color: COLORS.textDim }}>Due: {selectedDefect.dueDate}</span>
+              </div>
+
+              {/* Phase Progress */}
+              <div style={{ marginBottom: 20 }}>
+                <div style={{ fontSize: 9, letterSpacing: 1, color: COLORS.textMuted, marginBottom: 8 }}>PHASE PROGRESS</div>
+                <div style={{ display: "flex", gap: 2 }}>
+                  {D_PHASES.map((p, i) => {
+                    const current = phaseIndex(selectedDefect.phase);
+                    const isDone = i <= current;
+                    return (
+                      <div key={p.id} style={{ flex: 1, height: 4, borderRadius: 2, background: isDone ? p.color : COLORS.border, transition: "background 0.3s" }} />
+                    );
+                  })}
+                </div>
+                <div style={{ display: "flex", justifyContent: "space-between", marginTop: 4 }}>
+                  <span style={{ fontSize: 8, color: COLORS.textMuted }}>D0</span>
+                  <span style={{ fontSize: 8, color: COLORS.textMuted }}>Current: {selectedDefect.phase}</span>
+                  <span style={{ fontSize: 8, color: COLORS.textMuted }}>D8</span>
+                </div>
+                <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+                  <button className="nav-btn" disabled={phaseIndex(selectedDefect.phase) === 0}
+                    onClick={() => advancePhase(selectedDefect.id, -1)}
+                    style={{ flex: 1, padding: "6px 0", fontSize: 10, borderRadius: 4, background: COLORS.border, color: COLORS.textMuted, opacity: phaseIndex(selectedDefect.phase) === 0 ? 0.4 : 1, fontFamily: "inherit", letterSpacing: 1 }}>
+                    ← PREV
+                  </button>
+                  <button className="nav-btn" disabled={phaseIndex(selectedDefect.phase) === 8}
+                    onClick={() => advancePhase(selectedDefect.id, 1)}
+                    style={{ flex: 1, padding: "6px 0", fontSize: 10, borderRadius: 4, background: COLORS.accent, color: "#fff", opacity: phaseIndex(selectedDefect.phase) === 8 ? 0.4 : 1, fontFamily: "inherit", letterSpacing: 1 }}>
+                    NEXT PHASE →
+                  </button>
+                </div>
+              </div>
+
+              {selectedDefect.containment && (
+                <DetailBlock label="D3 CONTAINMENT" value={selectedDefect.containment} color={COLORS.teal} />
+              )}
+              {selectedDefect.rootCause && (
+                <DetailBlock label="D4/D5 ROOT CAUSE" value={selectedDefect.rootCause} color={COLORS.purple} />
+              )}
+
+              {selectedDefect.linkedStory && (
+                <div style={{ marginTop: 16, background: COLORS.tealDim, border: `1px solid ${COLORS.teal}22`, borderRadius: 6, padding: "10px 14px" }}>
+                  <div style={{ fontSize: 9, color: COLORS.teal, letterSpacing: 1, marginBottom: 4 }}>LINKED AGILE STORY</div>
+                  <div style={{ fontSize: 12, color: COLORS.text }}>{data.agileItems.find(a => a.id === selectedDefect.linkedStory)?.title}</div>
+                  <div style={{ fontSize: 9, color: COLORS.textMuted, marginTop: 2 }}>{selectedDefect.linkedStory}</div>
+                </div>
+              )}
+
+              <div style={{ marginTop: 16, marginBottom: 24 }}>
+                <div style={{ fontSize: 9, letterSpacing: 1, color: COLORS.textMuted, marginBottom: 8 }}>TEAM</div>
+                <div style={{ display: "flex", gap: 6 }}>
+                  {selectedDefect.team.map(m => (
+                    <div key={m} style={{ padding: "4px 10px", background: COLORS.border, borderRadius: 4, fontSize: 11, fontWeight: 700, color: COLORS.accent }}>{m}</div>
+                  ))}
+                </div>
+              </div>
+
+              <button className="nav-btn" onClick={() => deleteDefect(selectedDefect.id)}
+                style={{ width: "100%", padding: "7px 0", background: COLORS.redDim, color: COLORS.red, borderRadius: 6, fontSize: 11, letterSpacing: 1, fontFamily: "inherit", fontWeight: 700 }}>
+                DELETE DEFECT
+              </button>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* NEW AGILE CARD FORM */}
+      {showNewCard && (
+        <div style={{ position: "fixed", top: 0, right: 0, width: 420, height: "100vh", background: COLORS.surface, borderLeft: `1px solid ${COLORS.border}`, zIndex: 200, overflow: "auto", padding: 24 }} className="slide-in">
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
+            <div style={{ fontFamily: "'Bebas Neue'", fontSize: 22, letterSpacing: 2 }}>NEW STORY</div>
+            <button className="nav-btn" onClick={() => setShowNewCard(false)} style={{ background: COLORS.border, color: COLORS.textMuted, padding: "4px 10px", borderRadius: 4, fontSize: 12, fontFamily: "inherit" }}>✕</button>
+          </div>
+          {[
+            { label: "TITLE", key: "title", type: "text", placeholder: "Story title..." },
+            { label: "ASSIGNEE", key: "assignee", type: "text", placeholder: "Initials e.g. KW" },
+            { label: "POINTS", key: "points", type: "number", placeholder: "3" },
+            { label: "TAGS (comma-separated)", key: "tags", type: "text", placeholder: "frontend, api" },
+          ].map(({ label, key, type, placeholder }) => (
+            <div key={key} style={{ marginBottom: 16 }}>
+              <div style={{ fontSize: 9, letterSpacing: 1, color: COLORS.textMuted, marginBottom: 6 }}>{label}</div>
+              <input type={type} placeholder={placeholder} value={newCardForm[key]}
+                onChange={e => setNewCardForm(f => ({ ...f, [key]: e.target.value }))}
+                style={{ width: "100%", background: COLORS.card, border: `1px solid ${COLORS.border}`, borderRadius: 4, padding: "8px 10px", color: COLORS.text, fontSize: 12, fontFamily: "inherit", outline: "none" }} />
+            </div>
+          ))}
+          <div style={{ marginBottom: 16 }}>
+            <div style={{ fontSize: 9, letterSpacing: 1, color: COLORS.textMuted, marginBottom: 6 }}>TYPE</div>
+            <div style={{ display: "flex", gap: 6 }}>
+              {["Story", "Bug", "Feature"].map(t => (
+                <button key={t} className="nav-btn" onClick={() => setNewCardForm(f => ({ ...f, type: t }))}
+                  style={{ flex: 1, padding: "6px 0", fontSize: 11, fontWeight: 700, borderRadius: 4, fontFamily: "inherit", background: newCardForm.type === t ? typeColor(t) : COLORS.border, color: newCardForm.type === t ? "#fff" : COLORS.textMuted }}>{t}</button>
               ))}
             </div>
           </div>
+          <div style={{ marginBottom: 16 }}>
+            <div style={{ fontSize: 9, letterSpacing: 1, color: COLORS.textMuted, marginBottom: 6 }}>PRIORITY</div>
+            <div style={{ display: "flex", gap: 6 }}>
+              {["Critical", "High", "Med", "Low"].map(p => (
+                <button key={p} className="nav-btn" onClick={() => setNewCardForm(f => ({ ...f, priority: p }))}
+                  style={{ flex: 1, padding: "6px 0", fontSize: 11, fontWeight: 700, borderRadius: 4, fontFamily: "inherit", background: newCardForm.priority === p ? priorityColor(p) : COLORS.border, color: newCardForm.priority === p ? "#fff" : COLORS.textMuted }}>{p}</button>
+              ))}
+            </div>
+          </div>
+          <div style={{ marginBottom: 24 }}>
+            <div style={{ fontSize: 9, letterSpacing: 1, color: COLORS.textMuted, marginBottom: 6 }}>START IN COLUMN</div>
+            <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+              {AGILE_COLS.map(c => (
+                <button key={c} className="nav-btn" onClick={() => setNewCardForm(f => ({ ...f, col: c }))}
+                  style={{ padding: "5px 10px", fontSize: 9, borderRadius: 4, fontFamily: "inherit", background: newCardForm.col === c ? COLORS.teal : COLORS.border, color: newCardForm.col === c ? "#fff" : COLORS.textMuted }}>{c}</button>
+              ))}
+            </div>
+          </div>
+          <button className="nav-btn" onClick={submitNewCard}
+            style={{ width: "100%", padding: "10px 0", background: COLORS.teal, color: "#fff", borderRadius: 6, fontSize: 12, fontWeight: 700, letterSpacing: 1, fontFamily: "inherit" }}>
+            CREATE STORY
+          </button>
         </div>
       )}
 
@@ -527,49 +687,103 @@ export default function FlowForge() {
 
       {/* AGILE CARD DETAIL */}
       {selectedCard && (
-        <div style={{ position: "fixed", top: 0, right: 0, width: 380, height: "100vh", background: COLORS.surface, borderLeft: `1px solid ${COLORS.border}`, zIndex: 200, padding: 24 }} className="slide-in">
+        <div style={{ position: "fixed", top: 0, right: 0, width: 380, height: "100vh", background: COLORS.surface, borderLeft: `1px solid ${COLORS.border}`, zIndex: 200, padding: 24, overflow: "auto" }} className="slide-in">
           <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 20 }}>
             <div>
               <div style={{ fontSize: 9, color: COLORS.teal, letterSpacing: 1, marginBottom: 4 }}>AGILE CARD</div>
               <div style={{ fontFamily: "'Bebas Neue'", fontSize: 22, letterSpacing: 2 }}>{selectedCard.id}</div>
             </div>
-            <button className="nav-btn" onClick={() => setSelectedCard(null)} style={{ background: COLORS.border, color: COLORS.textMuted, padding: "4px 10px", borderRadius: 4, fontSize: 12, fontFamily: "inherit" }}>✕</button>
-          </div>
-          <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 12 }}>{selectedCard.title}</div>
-          <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
-            <span style={{ fontSize: 10, padding: "3px 8px", borderRadius: 4, background: typeColor(selectedCard.type) + "22", color: typeColor(selectedCard.type), fontWeight: 700 }}>{selectedCard.type}</span>
-            <span style={{ fontSize: 10, padding: "3px 8px", borderRadius: 4, background: priorityColor(selectedCard.priority) + "22", color: priorityColor(selectedCard.priority) }}>{selectedCard.priority}</span>
-            <span style={{ fontSize: 10, padding: "3px 8px", borderRadius: 4, background: COLORS.border, color: COLORS.textDim }}>{selectedCard.points} pts</span>
-          </div>
-          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 16 }}>
-            {selectedCard.tags.map(t => <span key={t} className="tag" style={{ background: COLORS.border, color: COLORS.textMuted }}>{t}</span>)}
-          </div>
-          {selectedCard.linkedDefectId && (
-            <div style={{ background: COLORS.accentDim, border: `1px solid ${COLORS.accent}22`, borderRadius: 6, padding: "10px 14px" }}>
-              <div style={{ fontSize: 9, color: COLORS.accent, letterSpacing: 1, marginBottom: 4 }}>LINKED 8D DEFECT</div>
-              <div style={{ fontSize: 12, color: COLORS.text }}>{data.defects.find(d => d.id === selectedCard.linkedDefectId)?.title}</div>
-              <div style={{ fontSize: 9, color: COLORS.textMuted, marginTop: 2 }}>{selectedCard.linkedDefectId}</div>
+            <div style={{ display: "flex", gap: 6 }}>
+              {!editingCard && (
+                <button className="nav-btn" onClick={() => { setCardEditForm({ ...selectedCard, tags: selectedCard.tags.join(", ") }); setEditingCard(true); }}
+                  style={{ background: COLORS.tealDim, color: COLORS.teal, padding: "4px 10px", borderRadius: 4, fontSize: 10, fontFamily: "inherit", letterSpacing: 1 }}>EDIT</button>
+              )}
+              <button className="nav-btn" onClick={() => { setSelectedCard(null); setEditingCard(false); }} style={{ background: COLORS.border, color: COLORS.textMuted, padding: "4px 10px", borderRadius: 4, fontSize: 12, fontFamily: "inherit" }}>✕</button>
             </div>
-          )}
-          <div style={{ marginTop: 16 }}>
-            <div style={{ fontSize: 9, letterSpacing: 1, color: COLORS.textMuted, marginBottom: 6 }}>ASSIGNEE</div>
-            <div style={{ display: "inline-block", padding: "4px 12px", background: COLORS.border, borderRadius: 4, fontSize: 11, fontWeight: 700, color: COLORS.accent }}>{selectedCard.assignee}</div>
           </div>
-          <div style={{ marginTop: 16 }}>
-            <div style={{ fontSize: 9, letterSpacing: 1, color: COLORS.textMuted, marginBottom: 6 }}>STATUS</div>
-            <div style={{ fontSize: 11, padding: "4px 12px", background: COLORS.tealDim, color: COLORS.teal, borderRadius: 4, display: "inline-block" }}>{selectedCard.col}</div>
-          </div>
-          <div style={{ marginTop: 16 }}>
-            <div style={{ fontSize: 9, letterSpacing: 1, color: COLORS.textMuted, marginBottom: 6 }}>MOVE TO</div>
-            <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
-              {AGILE_COLS.filter(c => c !== selectedCard.col).map(col => (
-                <button key={col} className="nav-btn" onClick={() => moveCard(selectedCard.id, col)}
-                  style={{ fontSize: 9, padding: "4px 10px", borderRadius: 4, background: COLORS.border, color: COLORS.textDim, fontFamily: "inherit", letterSpacing: 0.5 }}>
-                  {col}
-                </button>
+
+          {editingCard ? (
+            <div>
+              {[
+                { label: "TITLE", key: "title", type: "text" },
+                { label: "ASSIGNEE", key: "assignee", type: "text" },
+                { label: "POINTS", key: "points", type: "number" },
+                { label: "TAGS (comma-separated)", key: "tags", type: "text" },
+              ].map(({ label, key, type }) => (
+                <div key={key} style={{ marginBottom: 14 }}>
+                  <div style={{ fontSize: 9, letterSpacing: 1, color: COLORS.textMuted, marginBottom: 5 }}>{label}</div>
+                  <input type={type} value={cardEditForm[key] ?? ""} onChange={e => setCardEditForm(f => ({ ...f, [key]: e.target.value }))}
+                    style={{ width: "100%", background: COLORS.card, border: `1px solid ${COLORS.border}`, borderRadius: 4, padding: "7px 10px", color: COLORS.text, fontSize: 12, fontFamily: "inherit", outline: "none" }} />
+                </div>
               ))}
+              <div style={{ marginBottom: 14 }}>
+                <div style={{ fontSize: 9, letterSpacing: 1, color: COLORS.textMuted, marginBottom: 5 }}>TYPE</div>
+                <div style={{ display: "flex", gap: 4 }}>
+                  {["Story", "Bug", "Feature"].map(t => (
+                    <button key={t} className="nav-btn" onClick={() => setCardEditForm(f => ({ ...f, type: t }))}
+                      style={{ flex: 1, padding: "5px 0", fontSize: 10, borderRadius: 4, fontFamily: "inherit", background: cardEditForm.type === t ? typeColor(t) : COLORS.border, color: cardEditForm.type === t ? "#fff" : COLORS.textMuted }}>{t}</button>
+                  ))}
+                </div>
+              </div>
+              <div style={{ marginBottom: 20 }}>
+                <div style={{ fontSize: 9, letterSpacing: 1, color: COLORS.textMuted, marginBottom: 5 }}>PRIORITY</div>
+                <div style={{ display: "flex", gap: 4 }}>
+                  {["Critical", "High", "Med", "Low"].map(p => (
+                    <button key={p} className="nav-btn" onClick={() => setCardEditForm(f => ({ ...f, priority: p }))}
+                      style={{ flex: 1, padding: "5px 0", fontSize: 10, borderRadius: 4, fontFamily: "inherit", background: cardEditForm.priority === p ? priorityColor(p) : COLORS.border, color: cardEditForm.priority === p ? "#fff" : COLORS.textMuted }}>{p}</button>
+                  ))}
+                </div>
+              </div>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button className="nav-btn" onClick={saveCardEdit}
+                  style={{ flex: 1, padding: "8px 0", background: COLORS.teal, color: "#fff", borderRadius: 6, fontSize: 11, fontWeight: 700, letterSpacing: 1, fontFamily: "inherit" }}>SAVE</button>
+                <button className="nav-btn" onClick={() => setEditingCard(false)}
+                  style={{ padding: "8px 14px", background: COLORS.border, color: COLORS.textMuted, borderRadius: 6, fontSize: 11, fontFamily: "inherit" }}>CANCEL</button>
+              </div>
             </div>
-          </div>
+          ) : (
+            <>
+              <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 12 }}>{selectedCard.title}</div>
+              <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+                <span style={{ fontSize: 10, padding: "3px 8px", borderRadius: 4, background: typeColor(selectedCard.type) + "22", color: typeColor(selectedCard.type), fontWeight: 700 }}>{selectedCard.type}</span>
+                <span style={{ fontSize: 10, padding: "3px 8px", borderRadius: 4, background: priorityColor(selectedCard.priority) + "22", color: priorityColor(selectedCard.priority) }}>{selectedCard.priority}</span>
+                <span style={{ fontSize: 10, padding: "3px 8px", borderRadius: 4, background: COLORS.border, color: COLORS.textDim }}>{selectedCard.points} pts</span>
+              </div>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 16 }}>
+                {selectedCard.tags.map(t => <span key={t} className="tag" style={{ background: COLORS.border, color: COLORS.textMuted }}>{t}</span>)}
+              </div>
+              {selectedCard.linkedDefectId && (
+                <div style={{ background: COLORS.accentDim, border: `1px solid ${COLORS.accent}22`, borderRadius: 6, padding: "10px 14px", marginBottom: 16 }}>
+                  <div style={{ fontSize: 9, color: COLORS.accent, letterSpacing: 1, marginBottom: 4 }}>LINKED 8D DEFECT</div>
+                  <div style={{ fontSize: 12, color: COLORS.text }}>{data.defects.find(d => d.id === selectedCard.linkedDefectId)?.title}</div>
+                  <div style={{ fontSize: 9, color: COLORS.textMuted, marginTop: 2 }}>{selectedCard.linkedDefectId}</div>
+                </div>
+              )}
+              <div style={{ marginBottom: 16 }}>
+                <div style={{ fontSize: 9, letterSpacing: 1, color: COLORS.textMuted, marginBottom: 6 }}>ASSIGNEE</div>
+                <div style={{ display: "inline-block", padding: "4px 12px", background: COLORS.border, borderRadius: 4, fontSize: 11, fontWeight: 700, color: COLORS.accent }}>{selectedCard.assignee}</div>
+              </div>
+              <div style={{ marginBottom: 16 }}>
+                <div style={{ fontSize: 9, letterSpacing: 1, color: COLORS.textMuted, marginBottom: 6 }}>STATUS</div>
+                <div style={{ fontSize: 11, padding: "4px 12px", background: COLORS.tealDim, color: COLORS.teal, borderRadius: 4, display: "inline-block" }}>{selectedCard.col}</div>
+              </div>
+              <div style={{ marginBottom: 24 }}>
+                <div style={{ fontSize: 9, letterSpacing: 1, color: COLORS.textMuted, marginBottom: 6 }}>MOVE TO</div>
+                <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+                  {AGILE_COLS.filter(c => c !== selectedCard.col).map(col => (
+                    <button key={col} className="nav-btn" onClick={() => moveCard(selectedCard.id, col)}
+                      style={{ fontSize: 9, padding: "4px 10px", borderRadius: 4, background: COLORS.border, color: COLORS.textDim, fontFamily: "inherit", letterSpacing: 0.5 }}>
+                      {col}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <button className="nav-btn" onClick={() => deleteCard(selectedCard.id)}
+                style={{ width: "100%", padding: "7px 0", background: COLORS.redDim, color: COLORS.red, borderRadius: 6, fontSize: 11, letterSpacing: 1, fontFamily: "inherit", fontWeight: 700 }}>
+                DELETE CARD
+              </button>
+            </>
+          )}
         </div>
       )}
     </div>

@@ -2,6 +2,11 @@ const { PrismaClient } = require("@prisma/client");
 const prisma = new PrismaClient();
 
 async function main() {
+  // Clear existing data
+  await prisma.agileItem.deleteMany();
+  await prisma.defect.deleteMany();
+  await prisma.sprint.deleteMany();
+
   // Sprints
   await prisma.sprint.createMany({
     data: [
