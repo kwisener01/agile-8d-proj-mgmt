@@ -124,6 +124,7 @@ export default function FlowForge() {
   const [sprintEditForm, setSprintEditForm] = useState({});
   const [bridgeFilter, setBridgeFilter] = useState("all");
   const [inlineDefectFields, setInlineDefectFields] = useState({});
+  const [expandedSprint, setExpandedSprint] = useState(null);
   const [linkingDefect, setLinkingDefect] = useState(null); // defect id being linked
   const [linkStoryPick, setLinkStoryPick] = useState("");
   const [autoCreateStory, setAutoCreateStory] = useState(true);
@@ -650,36 +651,99 @@ export default function FlowForge() {
                           <button className="nav-btn" onClick={() => deleteSprint(sprint.id)} style={{ marginLeft: "auto", padding: "7px 14px", background: COLORS.redDim, color: COLORS.red, borderRadius: 6, fontSize: 11, fontFamily: "inherit", letterSpacing: 1 }}>DELETE</button>
                         </div>
                       </div>
-                    ) : (
-                      <div style={{ display: "flex", alignItems: "center", gap: 20 }}>
-                        <div style={{ minWidth: 60 }}>
-                          <div style={{ fontSize: 9, color: COLORS.textMuted, letterSpacing: 1 }}>{sprint.id}</div>
-                          <div style={{ fontSize: 8, marginTop: 2, padding: "2px 6px", borderRadius: 3, background: statusColor + "22", color: statusColor, display: "inline-block", letterSpacing: 1, textTransform: "uppercase" }}>{sprint.status}</div>
-                        </div>
-                        <div style={{ flex: 1 }}>
-                          <div style={{ fontFamily: "'Bebas Neue'", fontSize: 20, letterSpacing: 2 }}>{sprint.name}</div>
-                          <div style={{ fontSize: 10, color: COLORS.textMuted, marginTop: 1 }}>{sprint.start} → {sprint.end}</div>
-                        </div>
-                        <div style={{ minWidth: 140 }}>
-                          <div style={{ fontSize: 9, color: COLORS.textMuted, marginBottom: 5 }}>VELOCITY {sprint.velocity} / {sprint.target} pts ({pct}%)</div>
-                          <div style={{ width: "100%", height: 5, background: COLORS.border, borderRadius: 3 }}>
-                            <div style={{ width: `${Math.min(pct, 100)}%`, height: "100%", background: pct >= 80 ? COLORS.green : COLORS.teal, borderRadius: 3 }} />
+                    ) : (() => {
+                      const sprintItems = sprint.status === "active"
+                        ? data.agileItems.filter(a => a.col !== "Backlog")
+                        : data.agileItems.filter(a => a.sprintId === sprint.id);
+                      const isExpanded = expandedSprint === sprint.id;
+                      const colColor = { "In Sprint": COLORS.teal, "In Progress": COLORS.accent, "Review": COLORS.yellow, "Done": COLORS.green, "Backlog": COLORS.textMuted };
+                      return (
+                        <>
+                          <div style={{ display: "flex", alignItems: "center", gap: 20 }}>
+                            <div style={{ minWidth: 60 }}>
+                              <div style={{ fontSize: 9, color: COLORS.textMuted, letterSpacing: 1 }}>{sprint.id}</div>
+                              <div style={{ fontSize: 8, marginTop: 2, padding: "2px 6px", borderRadius: 3, background: statusColor + "22", color: statusColor, display: "inline-block", letterSpacing: 1, textTransform: "uppercase" }}>{sprint.status}</div>
+                            </div>
+                            <div style={{ flex: 1, cursor: "pointer" }} onClick={() => setExpandedSprint(isExpanded ? null : sprint.id)}>
+                              <div style={{ fontFamily: "'Bebas Neue'", fontSize: 20, letterSpacing: 2 }}>{sprint.name}</div>
+                              <div style={{ fontSize: 10, color: COLORS.textMuted, marginTop: 1 }}>{sprint.start} → {sprint.end} · <span style={{ color: COLORS.teal }}>{sprintItems.length} stories</span></div>
+                            </div>
+                            <div style={{ minWidth: 140 }}>
+                              <div style={{ fontSize: 9, color: COLORS.textMuted, marginBottom: 5 }}>VELOCITY {sprint.velocity} / {sprint.target} pts ({pct}%)</div>
+                              <div style={{ width: "100%", height: 5, background: COLORS.border, borderRadius: 3 }}>
+                                <div style={{ width: `${Math.min(pct, 100)}%`, height: "100%", background: pct >= 80 ? COLORS.green : COLORS.teal, borderRadius: 3 }} />
+                              </div>
+                            </div>
+                            <div style={{ display: "flex", gap: 6 }}>
+                              {sprint.status === "planned" && (
+                                <button className="nav-btn" onClick={() => setSprintActive(sprint.id)}
+                                  style={{ padding: "5px 12px", fontSize: 9, background: COLORS.greenDim, color: COLORS.green, borderRadius: 4, fontFamily: "inherit", letterSpacing: 1 }}>SET ACTIVE</button>
+                              )}
+                              {sprint.status === "active" && (
+                                <button className="nav-btn" onClick={() => closeSprint(sprint.id)}
+                                  style={{ padding: "5px 12px", fontSize: 9, background: COLORS.border, color: COLORS.textMuted, borderRadius: 4, fontFamily: "inherit", letterSpacing: 1 }}>CLOSE</button>
+                              )}
+                              <button className="nav-btn" onClick={() => { setEditingSprint(sprint.id); setSprintEditForm({ ...sprint }); }}
+                                style={{ padding: "5px 12px", fontSize: 9, background: COLORS.tealDim, color: COLORS.teal, borderRadius: 4, fontFamily: "inherit", letterSpacing: 1 }}>EDIT</button>
+                              <button className="nav-btn" onClick={() => setExpandedSprint(isExpanded ? null : sprint.id)}
+                                style={{ padding: "5px 10px", fontSize: 11, background: COLORS.border, color: COLORS.textMuted, borderRadius: 4, fontFamily: "inherit" }}>
+                                {isExpanded ? "▲" : "▼"}
+                              </button>
+                            </div>
                           </div>
-                        </div>
-                        <div style={{ display: "flex", gap: 6 }}>
-                          {sprint.status === "planned" && (
-                            <button className="nav-btn" onClick={() => setSprintActive(sprint.id)}
-                              style={{ padding: "5px 12px", fontSize: 9, background: COLORS.greenDim, color: COLORS.green, borderRadius: 4, fontFamily: "inherit", letterSpacing: 1 }}>SET ACTIVE</button>
+                          {isExpanded && (
+                            <div style={{ marginTop: 16, borderTop: `1px solid ${COLORS.border}`, paddingTop: 14 }}>
+                              {sprintItems.length === 0 ? (
+                                <div style={{ fontSize: 11, color: COLORS.textMuted, textAlign: "center", padding: "12px 0" }}>No stories assigned to this sprint.</div>
+                              ) : (
+                                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11 }}>
+                                  <thead>
+                                    <tr style={{ color: COLORS.textMuted, fontSize: 9, letterSpacing: 1 }}>
+                                      <th style={{ textAlign: "left", padding: "4px 8px", fontWeight: 600 }}>TYPE</th>
+                                      <th style={{ textAlign: "left", padding: "4px 8px", fontWeight: 600 }}>STORY</th>
+                                      <th style={{ textAlign: "left", padding: "4px 8px", fontWeight: 600 }}>ASSIGNEE</th>
+                                      <th style={{ textAlign: "center", padding: "4px 8px", fontWeight: 600 }}>PTS</th>
+                                      <th style={{ textAlign: "left", padding: "4px 8px", fontWeight: 600 }}>STATUS</th>
+                                      <th style={{ textAlign: "left", padding: "4px 8px", fontWeight: 600 }}>PRIORITY</th>
+                                      <th style={{ textAlign: "left", padding: "4px 8px", fontWeight: 600 }}>8D</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {sprintItems.map(item => (
+                                      <tr key={item.id} className="card-hover" onClick={() => { setSelectedCard(item); setEditingCard(false); }}
+                                        style={{ cursor: "pointer", borderTop: `1px solid ${COLORS.border}` }}>
+                                        <td style={{ padding: "8px 8px" }}>
+                                          <span style={{ fontSize: 9, padding: "2px 6px", borderRadius: 3, background: typeColor(item.type) + "22", color: typeColor(item.type), fontWeight: 700 }}>{item.type}</span>
+                                        </td>
+                                        <td style={{ padding: "8px 8px", color: COLORS.text, maxWidth: 260 }}>
+                                          <div style={{ fontWeight: 500 }}>{item.title}</div>
+                                          <div style={{ fontSize: 9, color: COLORS.textMuted, marginTop: 2 }}>{item.tags.join(", ")}</div>
+                                        </td>
+                                        <td style={{ padding: "8px 8px" }}>
+                                          <span style={{ fontSize: 10, fontWeight: 700, color: COLORS.accent }}>{item.assignee}</span>
+                                        </td>
+                                        <td style={{ padding: "8px 8px", textAlign: "center", color: COLORS.textDim, fontWeight: 600 }}>{item.points}</td>
+                                        <td style={{ padding: "8px 8px" }}>
+                                          <span style={{ fontSize: 9, padding: "2px 7px", borderRadius: 3, background: (colColor[item.col] || COLORS.textMuted) + "22", color: colColor[item.col] || COLORS.textMuted }}>{item.col}</span>
+                                        </td>
+                                        <td style={{ padding: "8px 8px" }}>
+                                          <span style={{ fontSize: 9, color: priorityColor(item.priority) }}>{item.priority}</span>
+                                        </td>
+                                        <td style={{ padding: "8px 8px" }}>
+                                          {item.linkedDefectId && (
+                                            <span style={{ fontSize: 9, padding: "2px 6px", borderRadius: 3, background: COLORS.accentDim, color: COLORS.accent, fontWeight: 700 }}>{item.linkedDefectId}</span>
+                                          )}
+                                        </td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              )}
+                            </div>
                           )}
-                          {sprint.status === "active" && (
-                            <button className="nav-btn" onClick={() => closeSprint(sprint.id)}
-                              style={{ padding: "5px 12px", fontSize: 9, background: COLORS.border, color: COLORS.textMuted, borderRadius: 4, fontFamily: "inherit", letterSpacing: 1 }}>CLOSE</button>
-                          )}
-                          <button className="nav-btn" onClick={() => { setEditingSprint(sprint.id); setSprintEditForm({ ...sprint }); }}
-                            style={{ padding: "5px 12px", fontSize: 9, background: COLORS.tealDim, color: COLORS.teal, borderRadius: 4, fontFamily: "inherit", letterSpacing: 1 }}>EDIT</button>
-                        </div>
-                      </div>
-                    )}
+                        </>
+                      );
+                    })()}
                   </div>
                 );
               })}
