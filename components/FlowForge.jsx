@@ -123,6 +123,7 @@ export default function FlowForge() {
   const [editingSprint, setEditingSprint] = useState(null);
   const [sprintEditForm, setSprintEditForm] = useState({});
   const [bridgeFilter, setBridgeFilter] = useState("all");
+  const [inlineDefectFields, setInlineDefectFields] = useState({});
 
   const moveCard = async (id, col) => {
     await fetch(`/api/agile/${id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ col }) });
@@ -224,6 +225,16 @@ export default function FlowForge() {
     setData(d => ({ ...d, defects: d.defects.map(def => def.id === updated.id ? updated : def) }));
     setSelectedDefect(updated);
     setEditingDefect(false);
+  };
+
+  const saveInlineDefectField = async (defectId, key, value) => {
+    const defect = data.defects.find(d => d.id === defectId);
+    if (!defect) return;
+    const body = { ...defect, [key]: value, team: defect.team };
+    const res = await fetch(`/api/defects/${defectId}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    const updated = await res.json();
+    setData(d => ({ ...d, defects: d.defects.map(def => def.id === updated.id ? updated : def) }));
+    setSelectedDefect(updated);
   };
 
   const submitNewSprint = async () => {
@@ -398,7 +409,7 @@ export default function FlowForge() {
 
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
               {data.defects.map(d => (
-                <DefectRow key={d.id} defect={d} onClick={() => setSelectedDefect(d)} />
+                <DefectRow key={d.id} defect={d} onClick={() => { setSelectedDefect(d); setInlineDefectFields({}); }} />
               ))}
             </div>
           </div>
@@ -433,7 +444,7 @@ export default function FlowForge() {
 
             <div style={{ fontFamily: "'Bebas Neue'", fontSize: 14, letterSpacing: 2, color: COLORS.textMuted, margin: "24px 0 10px" }}>UNLINKED DEFECTS — NEEDS AGILE ACTION</div>
             {unlinkedDefects.map(d => (
-              <div key={d.id} className="card-hover" onClick={() => setSelectedDefect(d)}
+              <div key={d.id} className="card-hover" onClick={() => { setSelectedDefect(d); setInlineDefectFields({}); }}
                 style={{ background: COLORS.surface, border: `1px dashed ${COLORS.border}`, borderRadius: 8, padding: "12px 16px", marginBottom: 8, display: "flex", alignItems: "center", gap: 12 }}>
                 <span style={{ fontSize: 11, color: severityColor(d.severity), fontWeight: 700 }}>{d.severity}</span>
                 <span style={{ fontSize: 11, color: COLORS.textMuted }}>{d.id}</span>
@@ -628,7 +639,7 @@ export default function FlowForge() {
                 <button className="nav-btn" onClick={() => { setDefectEditForm({ ...selectedDefect, team: selectedDefect.team.join(", ") }); setEditingDefect(true); }}
                   style={{ background: COLORS.accentDim, color: COLORS.accent, padding: "4px 10px", borderRadius: 4, fontSize: 10, fontFamily: "inherit", letterSpacing: 1 }}>EDIT</button>
               )}
-              <button className="nav-btn" onClick={() => { setSelectedDefect(null); setEditingDefect(false); }} style={{ background: COLORS.border, color: COLORS.textMuted, padding: "4px 10px", borderRadius: 4, fontSize: 12, fontFamily: "inherit" }}>✕</button>
+              <button className="nav-btn" onClick={() => { setSelectedDefect(null); setEditingDefect(false); setInlineDefectFields({}); }} style={{ background: COLORS.border, color: COLORS.textMuted, padding: "4px 10px", borderRadius: 4, fontSize: 12, fontFamily: "inherit" }}>✕</button>
             </div>
           </div>
 
@@ -726,9 +737,34 @@ export default function FlowForge() {
                 { label: "D6 — IMPLEMENTATION & VALIDATION", key: "implementation", color: COLORS.yellow },
                 { label: "D7 — PREVENT RECURRENCE", key: "preventiveActions", color: COLORS.green },
                 { label: "D8 — TEAM RECOGNITION", key: "recognition", color: COLORS.textDim },
-              ].filter(f => selectedDefect[f.key]).map(f => (
-                <DetailBlock key={f.key} label={f.label} value={selectedDefect[f.key]} color={f.color} />
-              ))}
+              ].map(f => {
+                const fieldKey = `${selectedDefect.id}_${f.key}`;
+                const localVal = inlineDefectFields[fieldKey] ?? selectedDefect[f.key] ?? "";
+                return (
+                  <div key={f.key} style={{ marginBottom: 14 }}>
+                    <div style={{ fontSize: 9, letterSpacing: 1, color: f.color, marginBottom: 5, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <span>{f.label}</span>
+                      {inlineDefectFields[fieldKey] !== undefined && inlineDefectFields[fieldKey] !== (selectedDefect[f.key] ?? "") && (
+                        <span style={{ fontSize: 8, color: COLORS.textMuted }}>unsaved</span>
+                      )}
+                    </div>
+                    <textarea
+                      rows={3}
+                      value={localVal}
+                      placeholder={`Enter ${f.label.toLowerCase()}…`}
+                      onChange={e => setInlineDefectFields(s => ({ ...s, [fieldKey]: e.target.value }))}
+                      onBlur={e => {
+                        const val = e.target.value;
+                        if (val !== (selectedDefect[f.key] ?? "")) {
+                          saveInlineDefectField(selectedDefect.id, f.key, val);
+                          setInlineDefectFields(s => { const n = { ...s }; delete n[fieldKey]; return n; });
+                        }
+                      }}
+                      style={{ width: "100%", background: COLORS.card, border: `1px solid ${COLORS.border}`, borderRadius: 4, padding: "7px 10px", color: COLORS.text, fontSize: 12, fontFamily: "inherit", resize: "vertical", outline: "none" }}
+                    />
+                  </div>
+                );
+              })}
 
               {selectedDefect.linkedStory && (
                 <div style={{ marginTop: 16, background: COLORS.tealDim, border: `1px solid ${COLORS.teal}22`, borderRadius: 6, padding: "10px 14px" }}>
