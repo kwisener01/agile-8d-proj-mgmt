@@ -143,10 +143,23 @@ export default function FlowForge() {
     if (!newDefectForm.title || !newDefectForm.owner) return;
     const id = `8D-${String(data.defects.length + 1).padStart(3, "0")}`;
     const teamArr = newDefectForm.team ? newDefectForm.team.split(",").map(t => t.trim()).filter(Boolean) : [newDefectForm.owner];
-    const body = { ...newDefectForm, id, phase: "D0", team: JSON.stringify(teamArr), bridged: false };
+    const body = {
+      id,
+      title: newDefectForm.title,
+      severity: newDefectForm.severity,
+      owner: newDefectForm.owner,
+      description: newDefectForm.description,
+      dueDate: newDefectForm.dueDate,
+      containment: newDefectForm.containment || "",
+      rootCause: newDefectForm.rootCause || "",
+      team: teamArr,
+      phase: "D0",
+      created: new Date().toISOString().split("T")[0],
+      bridged: false,
+    };
     const res = await fetch("/api/defects", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-    const created = await res.json();
-    setData(d => ({ ...d, defects: [...d.defects, created] }));
+    const newDef = await res.json();
+    setData(d => ({ ...d, defects: [...d.defects, newDef] }));
     setShowNewDefect(false);
     setNewDefectForm({ title: "", severity: "S2", owner: "", description: "", dueDate: "", team: "", containment: "", rootCause: "" });
   };
@@ -198,7 +211,11 @@ export default function FlowForge() {
   };
 
   const saveDefectEdit = async () => {
-    const res = await fetch(`/api/defects/${defectEditForm.id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(defectEditForm) });
+    const teamArr = typeof defectEditForm.team === "string"
+      ? defectEditForm.team.split(",").map(t => t.trim()).filter(Boolean)
+      : defectEditForm.team;
+    const body = { ...defectEditForm, team: teamArr };
+    const res = await fetch(`/api/defects/${defectEditForm.id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
     const updated = await res.json();
     setData(d => ({ ...d, defects: d.defects.map(def => def.id === updated.id ? updated : def) }));
     setSelectedDefect(updated);
