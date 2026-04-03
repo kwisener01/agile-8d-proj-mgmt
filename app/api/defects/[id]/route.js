@@ -4,9 +4,9 @@ import { prisma } from "../../../../lib/prisma";
 
 export async function PUT(req, { params }) {
   const body = await req.json();
-  const data = { ...body };
-  if (data.team) data.team = JSON.stringify(data.team);
-  const defect = await prisma.defect.update({ where: { id: params.id }, data });
+  const { id, linkedStory, agileItems, ...fields } = body;
+  if (fields.team) fields.team = JSON.stringify(fields.team);
+  const defect = await prisma.defect.update({ where: { id: params.id }, data: fields });
   return NextResponse.json({ ...defect, team: JSON.parse(defect.team) });
 }
 
