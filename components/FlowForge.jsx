@@ -124,6 +124,8 @@ export default function FlowForge() {
   const [sprintEditForm, setSprintEditForm] = useState({});
   const [bridgeFilter, setBridgeFilter] = useState("all");
   const [inlineDefectFields, setInlineDefectFields] = useState({});
+  const [linkingDefect, setLinkingDefect] = useState(null); // defect id being linked
+  const [linkStoryPick, setLinkStoryPick] = useState("");
 
   const moveCard = async (id, col) => {
     await fetch(`/api/agile/${id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ col }) });
@@ -181,6 +183,19 @@ export default function FlowForge() {
       agileItems: [...d.agileItems, created],
       defects: d.defects.map(def => def.id === defect.id ? { ...def, linkedStory: created.id, bridged: true } : def),
     }));
+  };
+
+  const linkExistingStory = async (defect, storyId) => {
+    if (!storyId) return;
+    await fetch(`/api/agile/${storyId}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ linkedDefectId: defect.id }) });
+    await fetch(`/api/defects/${defect.id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ bridged: true }) });
+    setData(d => ({
+      ...d,
+      agileItems: d.agileItems.map(a => a.id === storyId ? { ...a, linkedDefectId: defect.id } : a),
+      defects: d.defects.map(def => def.id === defect.id ? { ...def, linkedStory: storyId, bridged: true } : def),
+    }));
+    setLinkingDefect(null);
+    setLinkStoryPick("");
   };
 
   const submitNewCard = async () => {
@@ -444,14 +459,38 @@ export default function FlowForge() {
 
             <div style={{ fontFamily: "'Bebas Neue'", fontSize: 14, letterSpacing: 2, color: COLORS.textMuted, margin: "24px 0 10px" }}>UNLINKED DEFECTS — NEEDS AGILE ACTION</div>
             {unlinkedDefects.map(d => (
-              <div key={d.id} className="card-hover" onClick={() => { setSelectedDefect(d); setInlineDefectFields({}); }}
-                style={{ background: COLORS.surface, border: `1px dashed ${COLORS.border}`, borderRadius: 8, padding: "12px 16px", marginBottom: 8, display: "flex", alignItems: "center", gap: 12 }}>
-                <span style={{ fontSize: 11, color: severityColor(d.severity), fontWeight: 700 }}>{d.severity}</span>
-                <span style={{ fontSize: 11, color: COLORS.textMuted }}>{d.id}</span>
-                <span style={{ fontSize: 12, flex: 1 }}>{d.title}</span>
-                <button className="nav-btn" onClick={() => createStoryFromDefect(d)} style={{ fontSize: 10, background: COLORS.tealDim, color: COLORS.teal, padding: "4px 10px", borderRadius: 4, letterSpacing: 1, fontFamily: "inherit" }}>
-                  CREATE STORY →
-                </button>
+              <div key={d.id} style={{ background: COLORS.surface, border: `1px dashed ${COLORS.border}`, borderRadius: 8, padding: "12px 16px", marginBottom: 8 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                  <span style={{ fontSize: 11, color: severityColor(d.severity), fontWeight: 700 }}>{d.severity}</span>
+                  <span style={{ fontSize: 11, color: COLORS.textMuted }}>{d.id}</span>
+                  <span className="card-hover" style={{ fontSize: 12, flex: 1, cursor: "pointer" }} onClick={() => { setSelectedDefect(d); setInlineDefectFields({}); }}>{d.title}</span>
+                  <button className="nav-btn" onClick={() => createStoryFromDefect(d)} style={{ fontSize: 10, background: COLORS.tealDim, color: COLORS.teal, padding: "4px 10px", borderRadius: 4, letterSpacing: 1, fontFamily: "inherit" }}>
+                    CREATE STORY →
+                  </button>
+                  <button className="nav-btn" onClick={() => { setLinkingDefect(d.id); setLinkStoryPick(""); }}
+                    style={{ fontSize: 10, background: COLORS.accentDim, color: COLORS.accent, padding: "4px 10px", borderRadius: 4, letterSpacing: 1, fontFamily: "inherit" }}>
+                    LINK EXISTING
+                  </button>
+                </div>
+                {linkingDefect === d.id && (
+                  <div style={{ marginTop: 10, display: "flex", gap: 8, alignItems: "center" }}>
+                    <select value={linkStoryPick} onChange={e => setLinkStoryPick(e.target.value)}
+                      style={{ flex: 1, background: COLORS.card, border: `1px solid ${COLORS.border}`, borderRadius: 4, padding: "6px 8px", color: COLORS.text, fontSize: 12, fontFamily: "inherit", outline: "none" }}>
+                      <option value="">— pick a story —</option>
+                      {data.agileItems.filter(a => !a.linkedDefectId).map(a => (
+                        <option key={a.id} value={a.id}>{a.id} · {a.title}</option>
+                      ))}
+                    </select>
+                    <button className="nav-btn" onClick={() => linkExistingStory(d, linkStoryPick)} disabled={!linkStoryPick}
+                      style={{ padding: "6px 14px", background: linkStoryPick ? COLORS.accent : COLORS.border, color: linkStoryPick ? "#fff" : COLORS.textMuted, borderRadius: 4, fontSize: 11, fontWeight: 700, fontFamily: "inherit", letterSpacing: 1 }}>
+                      LINK
+                    </button>
+                    <button className="nav-btn" onClick={() => setLinkingDefect(null)}
+                      style={{ padding: "6px 10px", background: COLORS.border, color: COLORS.textMuted, borderRadius: 4, fontSize: 11, fontFamily: "inherit" }}>
+                      CANCEL
+                    </button>
+                  </div>
+                )}
               </div>
             ))}
           </div>
