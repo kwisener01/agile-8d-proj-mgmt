@@ -115,7 +115,7 @@ export default function FlowForge() {
   const [showNewCard, setShowNewCard] = useState(false);
   const [newCardForm, setNewCardForm] = useState({ title: "", type: "Story", points: 3, assignee: "", priority: "Med", col: "Backlog", tags: "" });
   const [showNewDefect, setShowNewDefect] = useState(false);
-  const [newDefectForm, setNewDefectForm] = useState({ title: "", severity: "S2", owner: "", description: "", dueDate: "", team: "", containment: "", rootCause: "" });
+  const [newDefectForm, setNewDefectForm] = useState({ title: "", severity: "S2", owner: "", description: "", dueDate: "", team: "", containment: "", rootCause: "", correctiveActions: "", implementation: "", preventiveActions: "", recognition: "" });
   const [editingDefect, setEditingDefect] = useState(false);
   const [defectEditForm, setDefectEditForm] = useState({});
   const [showNewSprint, setShowNewSprint] = useState(false);
@@ -152,6 +152,10 @@ export default function FlowForge() {
       dueDate: newDefectForm.dueDate,
       containment: newDefectForm.containment || "",
       rootCause: newDefectForm.rootCause || "",
+      correctiveActions: newDefectForm.correctiveActions || "",
+      implementation: newDefectForm.implementation || "",
+      preventiveActions: newDefectForm.preventiveActions || "",
+      recognition: newDefectForm.recognition || "",
       team: teamArr,
       phase: "D0",
       created: new Date().toISOString().split("T")[0],
@@ -161,7 +165,7 @@ export default function FlowForge() {
     const newDef = await res.json();
     setData(d => ({ ...d, defects: [...d.defects, newDef] }));
     setShowNewDefect(false);
-    setNewDefectForm({ title: "", severity: "S2", owner: "", description: "", dueDate: "", team: "", containment: "", rootCause: "" });
+    setNewDefectForm({ title: "", severity: "S2", owner: "", description: "", dueDate: "", team: "", containment: "", rootCause: "", correctiveActions: "", implementation: "", preventiveActions: "", recognition: "" });
   };
 
   const createStoryFromDefect = async (defect) => {
@@ -653,8 +657,12 @@ export default function FlowForge() {
               </div>
               {[
                 { label: "DESCRIPTION", key: "description" },
-                { label: "D3 CONTAINMENT", key: "containment" },
-                { label: "D4/D5 ROOT CAUSE", key: "rootCause" },
+                { label: "D3 — CONTAINMENT", key: "containment" },
+                { label: "D4 — ROOT CAUSE", key: "rootCause" },
+                { label: "D5 — CORRECTIVE ACTIONS", key: "correctiveActions" },
+                { label: "D6 — IMPLEMENTATION & VALIDATION", key: "implementation" },
+                { label: "D7 — PREVENT RECURRENCE", key: "preventiveActions" },
+                { label: "D8 — TEAM RECOGNITION", key: "recognition" },
               ].map(({ label, key }) => (
                 <div key={key} style={{ marginBottom: 14 }}>
                   <div style={{ fontSize: 9, letterSpacing: 1, color: COLORS.textMuted, marginBottom: 5 }}>{label}</div>
@@ -711,12 +719,16 @@ export default function FlowForge() {
                 </div>
               </div>
 
-              {selectedDefect.containment && (
-                <DetailBlock label="D3 CONTAINMENT" value={selectedDefect.containment} color={COLORS.teal} />
-              )}
-              {selectedDefect.rootCause && (
-                <DetailBlock label="D4/D5 ROOT CAUSE" value={selectedDefect.rootCause} color={COLORS.purple} />
-              )}
+              {[
+                { label: "D3 — CONTAINMENT", key: "containment", color: COLORS.teal },
+                { label: "D4 — ROOT CAUSE", key: "rootCause", color: COLORS.purple },
+                { label: "D5 — CORRECTIVE ACTIONS", key: "correctiveActions", color: COLORS.accent },
+                { label: "D6 — IMPLEMENTATION & VALIDATION", key: "implementation", color: COLORS.yellow },
+                { label: "D7 — PREVENT RECURRENCE", key: "preventiveActions", color: COLORS.green },
+                { label: "D8 — TEAM RECOGNITION", key: "recognition", color: COLORS.textDim },
+              ].filter(f => selectedDefect[f.key]).map(f => (
+                <DetailBlock key={f.key} label={f.label} value={selectedDefect[f.key]} color={f.color} />
+              ))}
 
               {selectedDefect.linkedStory && (
                 <div style={{ marginTop: 16, background: COLORS.tealDim, border: `1px solid ${COLORS.teal}22`, borderRadius: 6, padding: "10px 14px" }}>
@@ -871,8 +883,12 @@ export default function FlowForge() {
           </div>
           {[
             { label: "DESCRIPTION", key: "description", placeholder: "Detailed problem description..." },
-            { label: "D3 CONTAINMENT (optional)", key: "containment", placeholder: "Immediate containment actions taken..." },
-            { label: "D4/D5 ROOT CAUSE (optional)", key: "rootCause", placeholder: "Known or suspected root cause..." },
+            { label: "D3 — CONTAINMENT", key: "containment", placeholder: "Immediate containment actions taken..." },
+            { label: "D4 — ROOT CAUSE", key: "rootCause", placeholder: "Known or suspected root cause..." },
+            { label: "D5 — CORRECTIVE ACTIONS", key: "correctiveActions", placeholder: "Permanent corrective actions selected..." },
+            { label: "D6 — IMPLEMENTATION & VALIDATION", key: "implementation", placeholder: "How corrective actions were implemented and validated..." },
+            { label: "D7 — PREVENT RECURRENCE", key: "preventiveActions", placeholder: "Systemic changes to prevent recurrence..." },
+            { label: "D8 — TEAM RECOGNITION", key: "recognition", placeholder: "Team acknowledgment and closure notes..." },
           ].map(({ label, key, placeholder }) => (
             <div key={key} style={{ marginBottom: 14 }}>
               <div style={{ fontSize: 9, letterSpacing: 1, color: COLORS.textMuted, marginBottom: 6 }}>{label}</div>

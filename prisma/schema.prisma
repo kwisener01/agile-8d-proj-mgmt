@@ -43,8 +43,12 @@ model Defect {
   team        String
   created     String
   dueDate     String
-  containment String
-  rootCause   String
+  containment       String  @default("")
+  rootCause         String  @default("")
+  correctiveActions String  @default("")
+  implementation    String  @default("")
+  preventiveActions String  @default("")
+  recognition       String  @default("")
   description String
   bridged     Boolean     @default(false)
   agileItems  AgileItem[]
