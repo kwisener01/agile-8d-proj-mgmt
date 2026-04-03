@@ -805,13 +805,48 @@ export default function FlowForge() {
                 );
               })}
 
-              {selectedDefect.linkedStory && (
-                <div style={{ marginTop: 16, background: COLORS.tealDim, border: `1px solid ${COLORS.teal}22`, borderRadius: 6, padding: "10px 14px" }}>
-                  <div style={{ fontSize: 9, color: COLORS.teal, letterSpacing: 1, marginBottom: 4 }}>LINKED AGILE STORY</div>
-                  <div style={{ fontSize: 12, color: COLORS.text }}>{data.agileItems.find(a => a.id === selectedDefect.linkedStory)?.title}</div>
-                  <div style={{ fontSize: 9, color: COLORS.textMuted, marginTop: 2 }}>{selectedDefect.linkedStory}</div>
-                </div>
-              )}
+              <div style={{ marginTop: 16, background: COLORS.tealDim, border: `1px solid ${COLORS.teal}22`, borderRadius: 6, padding: "10px 14px" }}>
+                <div style={{ fontSize: 9, color: COLORS.teal, letterSpacing: 1, marginBottom: 6 }}>LINKED AGILE STORY</div>
+                {selectedDefect.linkedStory ? (
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: 12, color: COLORS.text }}>{data.agileItems.find(a => a.id === selectedDefect.linkedStory)?.title}</div>
+                      <div style={{ fontSize: 9, color: COLORS.textMuted, marginTop: 2 }}>{selectedDefect.linkedStory}</div>
+                    </div>
+                    <button className="nav-btn" onClick={async () => {
+                      const storyId = selectedDefect.linkedStory;
+                      await fetch(`/api/agile/${storyId}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ linkedDefectId: null }) });
+                      await fetch(`/api/defects/${selectedDefect.id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ bridged: false }) });
+                      setData(d => ({
+                        ...d,
+                        agileItems: d.agileItems.map(a => a.id === storyId ? { ...a, linkedDefectId: null } : a),
+                        defects: d.defects.map(def => def.id === selectedDefect.id ? { ...def, linkedStory: null, bridged: false } : def),
+                      }));
+                      setSelectedDefect(s => ({ ...s, linkedStory: null, bridged: false }));
+                    }} style={{ fontSize: 9, padding: "3px 8px", background: COLORS.redDim, color: COLORS.red, borderRadius: 4, fontFamily: "inherit", letterSpacing: 1 }}>
+                      UNLINK
+                    </button>
+                  </div>
+                ) : (
+                  <select defaultValue="" onChange={async e => {
+                    const storyId = e.target.value;
+                    if (!storyId) return;
+                    await fetch(`/api/agile/${storyId}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ linkedDefectId: selectedDefect.id }) });
+                    await fetch(`/api/defects/${selectedDefect.id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ bridged: true }) });
+                    setData(d => ({
+                      ...d,
+                      agileItems: d.agileItems.map(a => a.id === storyId ? { ...a, linkedDefectId: selectedDefect.id } : a),
+                      defects: d.defects.map(def => def.id === selectedDefect.id ? { ...def, linkedStory: storyId, bridged: true } : def),
+                    }));
+                    setSelectedDefect(s => ({ ...s, linkedStory: storyId, bridged: true }));
+                  }} style={{ width: "100%", background: COLORS.card, border: `1px solid ${COLORS.teal}44`, borderRadius: 4, padding: "5px 8px", color: COLORS.text, fontSize: 11, fontFamily: "inherit", outline: "none" }}>
+                    <option value="">— link to an agile story —</option>
+                    {data.agileItems.filter(a => !a.linkedDefectId).map(a => (
+                      <option key={a.id} value={a.id}>{a.id} · {a.title}</option>
+                    ))}
+                  </select>
+                )}
+              </div>
 
               <div style={{ marginTop: 16, marginBottom: 24 }}>
                 <div style={{ fontSize: 9, letterSpacing: 1, color: COLORS.textMuted, marginBottom: 8 }}>TEAM</div>
@@ -1047,13 +1082,50 @@ export default function FlowForge() {
               <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 16 }}>
                 {selectedCard.tags.map(t => <span key={t} className="tag" style={{ background: COLORS.border, color: COLORS.textMuted }}>{t}</span>)}
               </div>
-              {selectedCard.linkedDefectId && (
-                <div style={{ background: COLORS.accentDim, border: `1px solid ${COLORS.accent}22`, borderRadius: 6, padding: "10px 14px", marginBottom: 16 }}>
-                  <div style={{ fontSize: 9, color: COLORS.accent, letterSpacing: 1, marginBottom: 4 }}>LINKED 8D DEFECT</div>
-                  <div style={{ fontSize: 12, color: COLORS.text }}>{data.defects.find(d => d.id === selectedCard.linkedDefectId)?.title}</div>
-                  <div style={{ fontSize: 9, color: COLORS.textMuted, marginTop: 2 }}>{selectedCard.linkedDefectId}</div>
-                </div>
-              )}
+              <div style={{ background: COLORS.accentDim, border: `1px solid ${COLORS.accent}22`, borderRadius: 6, padding: "10px 14px", marginBottom: 16 }}>
+                <div style={{ fontSize: 9, color: COLORS.accent, letterSpacing: 1, marginBottom: 6 }}>LINKED 8D DEFECT</div>
+                {selectedCard.linkedDefectId ? (
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: 12, color: COLORS.text }}>{data.defects.find(d => d.id === selectedCard.linkedDefectId)?.title}</div>
+                      <div style={{ fontSize: 9, color: COLORS.textMuted, marginTop: 2 }}>{selectedCard.linkedDefectId}</div>
+                    </div>
+                    <button className="nav-btn" onClick={async () => {
+                      const defectId = selectedCard.linkedDefectId;
+                      await fetch(`/api/agile/${selectedCard.id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ linkedDefectId: null }) });
+                      await fetch(`/api/defects/${defectId}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ bridged: false }) });
+                      setData(d => ({
+                        ...d,
+                        agileItems: d.agileItems.map(a => a.id === selectedCard.id ? { ...a, linkedDefectId: null } : a),
+                        defects: d.defects.map(def => def.id === defectId ? { ...def, linkedStory: null, bridged: false } : def),
+                      }));
+                      setSelectedCard(c => ({ ...c, linkedDefectId: null }));
+                    }} style={{ fontSize: 9, padding: "3px 8px", background: COLORS.redDim, color: COLORS.red, borderRadius: 4, fontFamily: "inherit", letterSpacing: 1 }}>
+                      UNLINK
+                    </button>
+                  </div>
+                ) : (
+                  <div style={{ display: "flex", gap: 6 }}>
+                    <select defaultValue="" onChange={async e => {
+                      const defectId = e.target.value;
+                      if (!defectId) return;
+                      await fetch(`/api/agile/${selectedCard.id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ linkedDefectId: defectId }) });
+                      await fetch(`/api/defects/${defectId}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ bridged: true }) });
+                      setData(d => ({
+                        ...d,
+                        agileItems: d.agileItems.map(a => a.id === selectedCard.id ? { ...a, linkedDefectId: defectId } : a),
+                        defects: d.defects.map(def => def.id === defectId ? { ...def, linkedStory: selectedCard.id, bridged: true } : def),
+                      }));
+                      setSelectedCard(c => ({ ...c, linkedDefectId: defectId }));
+                    }} style={{ flex: 1, background: COLORS.card, border: `1px solid ${COLORS.border}`, borderRadius: 4, padding: "5px 8px", color: COLORS.text, fontSize: 11, fontFamily: "inherit", outline: "none" }}>
+                      <option value="">— link to an 8D defect —</option>
+                      {data.defects.filter(d => !d.linkedStory).map(d => (
+                        <option key={d.id} value={d.id}>{d.id} · {d.title}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+              </div>
               <div style={{ marginBottom: 16 }}>
                 <div style={{ fontSize: 9, letterSpacing: 1, color: COLORS.textMuted, marginBottom: 6 }}>ASSIGNEE</div>
                 <div style={{ display: "inline-block", padding: "4px 12px", background: COLORS.border, borderRadius: 4, fontSize: 11, fontWeight: 700, color: COLORS.accent }}>{selectedCard.assignee}</div>
