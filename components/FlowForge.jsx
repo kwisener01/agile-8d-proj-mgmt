@@ -126,11 +126,24 @@ export default function FlowForge() {
   const [inlineDefectFields, setInlineDefectFields] = useState({});
   const [linkingDefect, setLinkingDefect] = useState(null); // defect id being linked
   const [linkStoryPick, setLinkStoryPick] = useState("");
+  const [autoCreateStory, setAutoCreateStory] = useState(true);
 
   const moveCard = async (id, col) => {
     await fetch(`/api/agile/${id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ col }) });
     setData(d => ({ ...d, agileItems: d.agileItems.map(a => a.id === id ? { ...a, col } : a) }));
     setSelectedCard(c => c?.id === id ? { ...c, col } : c);
+    if (col === "Done") {
+      const card = data.agileItems.find(a => a.id === id);
+      if (card?.linkedDefectId) {
+        const defect = data.defects.find(d => d.id === card.linkedDefectId);
+        if (defect && phaseIndex(defect.phase) < 8) {
+          const newPhase = D_PHASES[phaseIndex(defect.phase) + 1].id;
+          await fetch(`/api/defects/${defect.id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ phase: newPhase }) });
+          setData(d => ({ ...d, defects: d.defects.map(def => def.id === defect.id ? { ...def, phase: newPhase } : def) }));
+          setSelectedDefect(s => s?.id === defect.id ? { ...s, phase: newPhase } : s);
+        }
+      }
+    }
   };
 
   const advancePhase = async (id, dir) => {
@@ -166,7 +179,18 @@ export default function FlowForge() {
     };
     const res = await fetch("/api/defects", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
     const newDef = await res.json();
-    setData(d => ({ ...d, defects: [...d.defects, newDef] }));
+    let stateUpdate = { defects: [...data.defects, newDef] };
+    if (autoCreateStory) {
+      const storyId = `A${Date.now()}`;
+      const priority = { S1: "Critical", S2: "High", S3: "Med", S4: "Low" }[body.severity] || "Med";
+      const storyBody = { id: storyId, title: `Fix: ${body.title}`, type: "Bug", points: 3, assignee: body.owner, col: "Backlog", priority, tags: ["8D", "quality"], linkedDefectId: newDef.id };
+      const storyRes = await fetch("/api/agile", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(storyBody) });
+      const newStory = await storyRes.json();
+      await fetch(`/api/defects/${newDef.id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ bridged: true }) });
+      stateUpdate.agileItems = [...data.agileItems, newStory];
+      stateUpdate.defects = stateUpdate.defects.map(d => d.id === newDef.id ? { ...d, linkedStory: storyId, bridged: true } : d);
+    }
+    setData(d => ({ ...d, ...stateUpdate }));
     setShowNewDefect(false);
     setNewDefectForm({ title: "", severity: "S2", owner: "", description: "", dueDate: "", team: "", containment: "", rootCause: "", correctiveActions: "", implementation: "", preventiveActions: "", recognition: "" });
   };
@@ -1007,7 +1031,13 @@ export default function FlowForge() {
                 style={{ width: "100%", background: COLORS.card, border: `1px solid ${COLORS.border}`, borderRadius: 4, padding: "8px 10px", color: COLORS.text, fontSize: 12, fontFamily: "inherit", resize: "vertical", outline: "none" }} />
             </div>
           ))}
-          <div style={{ marginBottom: 24 }} />
+          <div style={{ marginBottom: 16, display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", background: COLORS.tealDim, borderRadius: 6, border: `1px solid ${COLORS.teal}33` }}>
+            <input type="checkbox" id="autoStory" checked={autoCreateStory} onChange={e => setAutoCreateStory(e.target.checked)}
+              style={{ accentColor: COLORS.teal, width: 14, height: 14, cursor: "pointer" }} />
+            <label htmlFor="autoStory" style={{ fontSize: 11, color: COLORS.teal, letterSpacing: 0.5, cursor: "pointer", userSelect: "none" }}>
+              Auto-create linked Agile story in Backlog
+            </label>
+          </div>
           <button className="nav-btn" onClick={submitNewDefect}
             style={{ width: "100%", padding: "10px 0", background: COLORS.accent, color: "#fff", borderRadius: 6, fontSize: 12, fontWeight: 700, letterSpacing: 1, fontFamily: "inherit" }}>
             CREATE 8D REPORT
