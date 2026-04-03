@@ -94,7 +94,7 @@ const priorityColor = (p) => ({ Critical: COLORS.red, High: COLORS.accent, Med: 
 const typeColor = (t) => ({ Bug: COLORS.red, Story: COLORS.teal, Feature: COLORS.purple }[t] || COLORS.textMuted);
 
 export default function FlowForge() {
-  const [view, setView] = useState("board"); // board | defects | bridge | pulse
+  const [view, setView] = useState("board"); // board | defects | bridge | pulse | sprints
   const [data, setData] = useState({ agileItems: [], defects: [], sprints: [] });
   const [loading, setLoading] = useState(true);
   const [selectedDefect, setSelectedDefect] = useState(null);
@@ -115,9 +115,13 @@ export default function FlowForge() {
   const [showNewCard, setShowNewCard] = useState(false);
   const [newCardForm, setNewCardForm] = useState({ title: "", type: "Story", points: 3, assignee: "", priority: "Med", col: "Backlog", tags: "" });
   const [showNewDefect, setShowNewDefect] = useState(false);
-  const [newDefectForm, setNewDefectForm] = useState({ title: "", severity: "S2", owner: "", description: "", dueDate: "" });
+  const [newDefectForm, setNewDefectForm] = useState({ title: "", severity: "S2", owner: "", description: "", dueDate: "", team: "", containment: "", rootCause: "" });
   const [editingDefect, setEditingDefect] = useState(false);
   const [defectEditForm, setDefectEditForm] = useState({});
+  const [showNewSprint, setShowNewSprint] = useState(false);
+  const [newSprintForm, setNewSprintForm] = useState({ name: "", start: "", end: "", target: 40, status: "planned" });
+  const [editingSprint, setEditingSprint] = useState(null);
+  const [sprintEditForm, setSprintEditForm] = useState({});
   const [bridgeFilter, setBridgeFilter] = useState("all");
 
   const moveCard = async (id, col) => {
@@ -138,12 +142,13 @@ export default function FlowForge() {
   const submitNewDefect = async () => {
     if (!newDefectForm.title || !newDefectForm.owner) return;
     const id = `8D-${String(data.defects.length + 1).padStart(3, "0")}`;
-    const body = { ...newDefectForm, id, phase: "D0", team: JSON.stringify([newDefectForm.owner]), containment: "", rootCause: "", bridged: false };
+    const teamArr = newDefectForm.team ? newDefectForm.team.split(",").map(t => t.trim()).filter(Boolean) : [newDefectForm.owner];
+    const body = { ...newDefectForm, id, phase: "D0", team: JSON.stringify(teamArr), bridged: false };
     const res = await fetch("/api/defects", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
     const created = await res.json();
     setData(d => ({ ...d, defects: [...d.defects, created] }));
     setShowNewDefect(false);
-    setNewDefectForm({ title: "", severity: "S2", owner: "", description: "", dueDate: "" });
+    setNewDefectForm({ title: "", severity: "S2", owner: "", description: "", dueDate: "", team: "", containment: "", rootCause: "" });
   };
 
   const createStoryFromDefect = async (defect) => {
@@ -200,6 +205,45 @@ export default function FlowForge() {
     setEditingDefect(false);
   };
 
+  const submitNewSprint = async () => {
+    if (!newSprintForm.name || !newSprintForm.start || !newSprintForm.end) return;
+    const id = `SP-${String(data.sprints.length + 1).padStart(2, "0")}`;
+    const body = { ...newSprintForm, id, velocity: 0, target: Number(newSprintForm.target) };
+    const res = await fetch("/api/sprints", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    const created = await res.json();
+    setData(d => ({ ...d, sprints: [...d.sprints, created] }));
+    setShowNewSprint(false);
+    setNewSprintForm({ name: "", start: "", end: "", target: 40, status: "planned" });
+  };
+
+  const saveSprintEdit = async () => {
+    const body = { ...sprintEditForm, target: Number(sprintEditForm.target), velocity: Number(sprintEditForm.velocity) };
+    const res = await fetch(`/api/sprints/${sprintEditForm.id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    const updated = await res.json();
+    setData(d => ({ ...d, sprints: d.sprints.map(s => s.id === updated.id ? updated : s) }));
+    setEditingSprint(null);
+  };
+
+  const deleteSprint = async (id) => {
+    await fetch(`/api/sprints/${id}`, { method: "DELETE" });
+    setData(d => ({ ...d, sprints: d.sprints.filter(s => s.id !== id) }));
+    setEditingSprint(null);
+  };
+
+  const setSprintActive = async (id) => {
+    const updates = data.sprints.map(s =>
+      fetch(`/api/sprints/${s.id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...s, status: s.id === id ? "active" : s.status === "active" ? "planned" : s.status }) })
+    );
+    await Promise.all(updates);
+    setData(d => ({ ...d, sprints: d.sprints.map(s => ({ ...s, status: s.id === id ? "active" : s.status === "active" ? "planned" : s.status })) }));
+  };
+
+  const closeSprint = async (id) => {
+    const res = await fetch(`/api/sprints/${id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status: "completed" }) });
+    const updated = await res.json();
+    setData(d => ({ ...d, sprints: d.sprints.map(s => s.id === updated.id ? updated : s) }));
+  };
+
   const phaseIndex = (pid) => D_PHASES.findIndex(d => d.id === pid);
 
   const bridgeItems = data.defects
@@ -234,6 +278,7 @@ export default function FlowForge() {
             { id: "defects", label: "8D TRACKER" },
             { id: "bridge", label: "BRIDGE" },
             { id: "pulse", label: "PULSE" },
+            { id: "sprints", label: "SPRINTS" },
           ].map(n => (
             <button key={n.id} className="nav-btn" onClick={() => setView(n.id)}
               style={{ padding: "6px 14px", borderRadius: 4, fontSize: 11, letterSpacing: 1, fontWeight: 600, fontFamily: "inherit",
@@ -451,6 +496,102 @@ export default function FlowForge() {
             </div>
           </div>
         )}
+        {/* SPRINTS */}
+        {view === "sprints" && (
+          <div style={{ flex: 1, padding: "20px 24px", overflow: "auto" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 24 }}>
+              <div>
+                <div style={{ fontFamily: "'Bebas Neue'", fontSize: 28, letterSpacing: 2, lineHeight: 1 }}>SPRINT MANAGEMENT</div>
+                <div style={{ fontSize: 10, color: COLORS.textMuted, marginTop: 2 }}>{data.sprints.length} sprints · {data.sprints.filter(s => s.status === "active").length} active</div>
+              </div>
+              <button onClick={() => setShowNewSprint(true)} className="nav-btn"
+                style={{ marginLeft: "auto", background: COLORS.teal, color: "#fff", padding: "8px 16px", borderRadius: 6, fontSize: 11, letterSpacing: 1, fontWeight: 700, fontFamily: "inherit" }}>
+                + NEW SPRINT
+              </button>
+            </div>
+
+            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              {data.sprints.map(sprint => {
+                const pct = sprint.target > 0 ? Math.round((sprint.velocity / sprint.target) * 100) : 0;
+                const statusColor = { active: COLORS.green, planned: COLORS.teal, completed: COLORS.textMuted }[sprint.status] || COLORS.textMuted;
+                const isEditing = editingSprint === sprint.id;
+                return (
+                  <div key={sprint.id} style={{ background: COLORS.surface, border: `1px solid ${sprint.status === "active" ? COLORS.green + "44" : COLORS.border}`, borderRadius: 10, padding: "18px 20px" }}>
+                    {isEditing ? (
+                      <div>
+                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 12, marginBottom: 14 }}>
+                          {[
+                            { label: "NAME", key: "name", type: "text" },
+                            { label: "START", key: "start", type: "text", placeholder: "Mar 10" },
+                            { label: "END", key: "end", type: "text", placeholder: "Mar 21" },
+                            { label: "TARGET PTS", key: "target", type: "number" },
+                          ].map(({ label, key, type, placeholder }) => (
+                            <div key={key}>
+                              <div style={{ fontSize: 9, letterSpacing: 1, color: COLORS.textMuted, marginBottom: 5 }}>{label}</div>
+                              <input type={type} placeholder={placeholder} value={sprintEditForm[key] ?? ""} onChange={e => setSprintEditForm(f => ({ ...f, [key]: e.target.value }))}
+                                style={{ width: "100%", background: COLORS.card, border: `1px solid ${COLORS.border}`, borderRadius: 4, padding: "6px 8px", color: COLORS.text, fontSize: 12, fontFamily: "inherit", outline: "none" }} />
+                            </div>
+                          ))}
+                        </div>
+                        <div style={{ marginBottom: 14 }}>
+                          <div style={{ fontSize: 9, letterSpacing: 1, color: COLORS.textMuted, marginBottom: 5 }}>VELOCITY (ACTUAL PTS)</div>
+                          <input type="number" value={sprintEditForm.velocity ?? 0} onChange={e => setSprintEditForm(f => ({ ...f, velocity: e.target.value }))}
+                            style={{ width: 120, background: COLORS.card, border: `1px solid ${COLORS.border}`, borderRadius: 4, padding: "6px 8px", color: COLORS.text, fontSize: 12, fontFamily: "inherit", outline: "none" }} />
+                        </div>
+                        <div style={{ marginBottom: 16 }}>
+                          <div style={{ fontSize: 9, letterSpacing: 1, color: COLORS.textMuted, marginBottom: 5 }}>STATUS</div>
+                          <div style={{ display: "flex", gap: 6 }}>
+                            {["planned", "active", "completed"].map(s => (
+                              <button key={s} className="nav-btn" onClick={() => setSprintEditForm(f => ({ ...f, status: s }))}
+                                style={{ padding: "5px 14px", fontSize: 10, borderRadius: 4, fontFamily: "inherit", textTransform: "uppercase", letterSpacing: 1,
+                                  background: sprintEditForm.status === s ? { planned: COLORS.teal, active: COLORS.green, completed: COLORS.border }[s] : COLORS.card,
+                                  color: sprintEditForm.status === s ? "#fff" : COLORS.textMuted }}>{s}</button>
+                            ))}
+                          </div>
+                        </div>
+                        <div style={{ display: "flex", gap: 8 }}>
+                          <button className="nav-btn" onClick={saveSprintEdit} style={{ padding: "7px 18px", background: COLORS.teal, color: "#fff", borderRadius: 6, fontSize: 11, fontWeight: 700, letterSpacing: 1, fontFamily: "inherit" }}>SAVE</button>
+                          <button className="nav-btn" onClick={() => setEditingSprint(null)} style={{ padding: "7px 14px", background: COLORS.border, color: COLORS.textMuted, borderRadius: 6, fontSize: 11, fontFamily: "inherit" }}>CANCEL</button>
+                          <button className="nav-btn" onClick={() => deleteSprint(sprint.id)} style={{ marginLeft: "auto", padding: "7px 14px", background: COLORS.redDim, color: COLORS.red, borderRadius: 6, fontSize: 11, fontFamily: "inherit", letterSpacing: 1 }}>DELETE</button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div style={{ display: "flex", alignItems: "center", gap: 20 }}>
+                        <div style={{ minWidth: 60 }}>
+                          <div style={{ fontSize: 9, color: COLORS.textMuted, letterSpacing: 1 }}>{sprint.id}</div>
+                          <div style={{ fontSize: 8, marginTop: 2, padding: "2px 6px", borderRadius: 3, background: statusColor + "22", color: statusColor, display: "inline-block", letterSpacing: 1, textTransform: "uppercase" }}>{sprint.status}</div>
+                        </div>
+                        <div style={{ flex: 1 }}>
+                          <div style={{ fontFamily: "'Bebas Neue'", fontSize: 20, letterSpacing: 2 }}>{sprint.name}</div>
+                          <div style={{ fontSize: 10, color: COLORS.textMuted, marginTop: 1 }}>{sprint.start} → {sprint.end}</div>
+                        </div>
+                        <div style={{ minWidth: 140 }}>
+                          <div style={{ fontSize: 9, color: COLORS.textMuted, marginBottom: 5 }}>VELOCITY {sprint.velocity} / {sprint.target} pts ({pct}%)</div>
+                          <div style={{ width: "100%", height: 5, background: COLORS.border, borderRadius: 3 }}>
+                            <div style={{ width: `${Math.min(pct, 100)}%`, height: "100%", background: pct >= 80 ? COLORS.green : COLORS.teal, borderRadius: 3 }} />
+                          </div>
+                        </div>
+                        <div style={{ display: "flex", gap: 6 }}>
+                          {sprint.status === "planned" && (
+                            <button className="nav-btn" onClick={() => setSprintActive(sprint.id)}
+                              style={{ padding: "5px 12px", fontSize: 9, background: COLORS.greenDim, color: COLORS.green, borderRadius: 4, fontFamily: "inherit", letterSpacing: 1 }}>SET ACTIVE</button>
+                          )}
+                          {sprint.status === "active" && (
+                            <button className="nav-btn" onClick={() => closeSprint(sprint.id)}
+                              style={{ padding: "5px 12px", fontSize: 9, background: COLORS.border, color: COLORS.textMuted, borderRadius: 4, fontFamily: "inherit", letterSpacing: 1 }}>CLOSE</button>
+                          )}
+                          <button className="nav-btn" onClick={() => { setEditingSprint(sprint.id); setSprintEditForm({ ...sprint }); }}
+                            style={{ padding: "5px 12px", fontSize: 9, background: COLORS.tealDim, color: COLORS.teal, borderRadius: 4, fontFamily: "inherit", letterSpacing: 1 }}>EDIT</button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
       </div>
 
       {/* DEFECT DETAIL PANEL */}
@@ -586,6 +727,44 @@ export default function FlowForge() {
         </div>
       )}
 
+      {/* NEW SPRINT FORM */}
+      {showNewSprint && (
+        <div style={{ position: "fixed", top: 0, right: 0, width: 400, height: "100vh", background: COLORS.surface, borderLeft: `1px solid ${COLORS.border}`, zIndex: 200, overflow: "auto", padding: 24 }} className="slide-in">
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
+            <div style={{ fontFamily: "'Bebas Neue'", fontSize: 22, letterSpacing: 2 }}>NEW SPRINT</div>
+            <button className="nav-btn" onClick={() => setShowNewSprint(false)} style={{ background: COLORS.border, color: COLORS.textMuted, padding: "4px 10px", borderRadius: 4, fontSize: 12, fontFamily: "inherit" }}>✕</button>
+          </div>
+          {[
+            { label: "SPRINT NAME", key: "name", type: "text", placeholder: "Sprint 14" },
+            { label: "START DATE", key: "start", type: "text", placeholder: "Apr 7" },
+            { label: "END DATE", key: "end", type: "text", placeholder: "Apr 18" },
+            { label: "VELOCITY TARGET (PTS)", key: "target", type: "number", placeholder: "40" },
+          ].map(({ label, key, type, placeholder }) => (
+            <div key={key} style={{ marginBottom: 16 }}>
+              <div style={{ fontSize: 9, letterSpacing: 1, color: COLORS.textMuted, marginBottom: 6 }}>{label}</div>
+              <input type={type} placeholder={placeholder} value={newSprintForm[key]}
+                onChange={e => setNewSprintForm(f => ({ ...f, [key]: e.target.value }))}
+                style={{ width: "100%", background: COLORS.card, border: `1px solid ${COLORS.border}`, borderRadius: 4, padding: "8px 10px", color: COLORS.text, fontSize: 12, fontFamily: "inherit", outline: "none" }} />
+            </div>
+          ))}
+          <div style={{ marginBottom: 24 }}>
+            <div style={{ fontSize: 9, letterSpacing: 1, color: COLORS.textMuted, marginBottom: 6 }}>STATUS</div>
+            <div style={{ display: "flex", gap: 6 }}>
+              {["planned", "active"].map(s => (
+                <button key={s} className="nav-btn" onClick={() => setNewSprintForm(f => ({ ...f, status: s }))}
+                  style={{ flex: 1, padding: "6px 0", fontSize: 11, borderRadius: 4, fontFamily: "inherit", textTransform: "uppercase", letterSpacing: 1,
+                    background: newSprintForm.status === s ? (s === "active" ? COLORS.green : COLORS.teal) : COLORS.border,
+                    color: newSprintForm.status === s ? "#fff" : COLORS.textMuted }}>{s}</button>
+              ))}
+            </div>
+          </div>
+          <button className="nav-btn" onClick={submitNewSprint}
+            style={{ width: "100%", padding: "10px 0", background: COLORS.teal, color: "#fff", borderRadius: 6, fontSize: 12, fontWeight: 700, letterSpacing: 1, fontFamily: "inherit" }}>
+            CREATE SPRINT
+          </button>
+        </div>
+      )}
+
       {/* NEW AGILE CARD FORM */}
       {showNewCard && (
         <div style={{ position: "fixed", top: 0, right: 0, width: 420, height: "100vh", background: COLORS.surface, borderLeft: `1px solid ${COLORS.border}`, zIndex: 200, overflow: "auto", padding: 24 }} className="slide-in">
@@ -650,6 +829,7 @@ export default function FlowForge() {
           {[
             { label: "TITLE", key: "title", type: "text", placeholder: "Describe the problem..." },
             { label: "OWNER", key: "owner", type: "text", placeholder: "Initials e.g. KW" },
+            { label: "TEAM (comma-separated)", key: "team", type: "text", placeholder: "KW, RK, ML" },
             { label: "DUE DATE", key: "dueDate", type: "date", placeholder: "" },
           ].map(({ label, key, type, placeholder }) => (
             <div key={key} style={{ marginBottom: 16 }}>
@@ -672,12 +852,19 @@ export default function FlowForge() {
               ))}
             </div>
           </div>
-          <div style={{ marginBottom: 24 }}>
-            <div style={{ fontSize: 9, letterSpacing: 1, color: COLORS.textMuted, marginBottom: 6 }}>DESCRIPTION</div>
-            <textarea rows={4} placeholder="Detailed problem description..." value={newDefectForm.description}
-              onChange={e => setNewDefectForm(f => ({ ...f, description: e.target.value }))}
-              style={{ width: "100%", background: COLORS.card, border: `1px solid ${COLORS.border}`, borderRadius: 4, padding: "8px 10px", color: COLORS.text, fontSize: 12, fontFamily: "inherit", resize: "vertical", outline: "none" }} />
-          </div>
+          {[
+            { label: "DESCRIPTION", key: "description", placeholder: "Detailed problem description..." },
+            { label: "D3 CONTAINMENT (optional)", key: "containment", placeholder: "Immediate containment actions taken..." },
+            { label: "D4/D5 ROOT CAUSE (optional)", key: "rootCause", placeholder: "Known or suspected root cause..." },
+          ].map(({ label, key, placeholder }) => (
+            <div key={key} style={{ marginBottom: 14 }}>
+              <div style={{ fontSize: 9, letterSpacing: 1, color: COLORS.textMuted, marginBottom: 6 }}>{label}</div>
+              <textarea rows={3} placeholder={placeholder} value={newDefectForm[key]}
+                onChange={e => setNewDefectForm(f => ({ ...f, [key]: e.target.value }))}
+                style={{ width: "100%", background: COLORS.card, border: `1px solid ${COLORS.border}`, borderRadius: 4, padding: "8px 10px", color: COLORS.text, fontSize: 12, fontFamily: "inherit", resize: "vertical", outline: "none" }} />
+            </div>
+          ))}
+          <div style={{ marginBottom: 24 }} />
           <button className="nav-btn" onClick={submitNewDefect}
             style={{ width: "100%", padding: "10px 0", background: COLORS.accent, color: "#fff", borderRadius: 6, fontSize: 12, fontWeight: 700, letterSpacing: 1, fontFamily: "inherit" }}>
             CREATE 8D REPORT
