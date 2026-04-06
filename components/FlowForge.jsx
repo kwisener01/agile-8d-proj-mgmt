@@ -177,6 +177,7 @@ export default function FlowForge() {
     await fetch(`/api/defects/${id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ phase: newPhase }) });
     setData(d => ({ ...d, defects: d.defects.map(def => def.id === id ? { ...def, phase: newPhase } : def) }));
     setSelectedDefect(d => d?.id === id ? { ...d, phase: newPhase } : d);
+    if (dir > 0) notify("phase_advanced", { defect, newPhase });
   };
 
   const submitNewDefect = async () => {
@@ -219,6 +220,7 @@ export default function FlowForge() {
     setData(d => ({ ...d, ...stateUpdate }));
     setShowNewDefect(false);
     setNewDefectForm({ title: "", severity: "S2", owner: "", description: "", dueDate: "", team: "", containment: "", rootCause: "", correctiveActions: "", implementation: "", preventiveActions: "", recognition: "" });
+    notify("new_defect", { defect: { ...body, team: teamArr } });
   };
 
   const createStoryFromDefect = async (defect) => {
@@ -274,6 +276,9 @@ export default function FlowForge() {
     setEditingCard(false);
   };
 
+  const notify = (type, payload) =>
+    fetch("/api/notify", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type, ...payload }) }).catch(() => {});
+
   const assignToSprint = async (storyId, sprintId) => {
     const sprint = data.sprints.find(s => s.id === sprintId);
     const item = data.agileItems.find(a => a.id === storyId);
@@ -282,6 +287,7 @@ export default function FlowForge() {
     const res = await fetch(`/api/agile/${storyId}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
     const updated = await res.json();
     setData(d => ({ ...d, agileItems: d.agileItems.map(a => a.id === updated.id ? updated : a) }));
+    if (sprintId && sprint) notify("story_assigned", { story: updated, sprint });
     return updated;
   };
 
@@ -311,6 +317,7 @@ export default function FlowForge() {
     const updated = await res.json();
     setData(d => ({ ...d, defects: d.defects.map(def => def.id === updated.id ? updated : def) }));
     setSelectedDefect(updated);
+    if (key === "containment" && value) notify("containment_saved", { defect: updated });
   };
 
   const submitNewSprint = async () => {
