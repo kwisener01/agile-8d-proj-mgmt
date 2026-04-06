@@ -360,6 +360,195 @@ export default function FlowForge() {
 
   const unlinkedDefects = data.defects.filter(d => !d.linkedStory);
 
+  const printDashboard = () => {
+    const now = new Date();
+    const dateStr = now.toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
+    const activeSprint = data.sprints.find(s => s.status === "active");
+    const colCounts = AGILE_COLS.reduce((acc, col) => { acc[col] = data.agileItems.filter(a => a.col === col).length; return acc; }, {});
+    const sevCounts = ["S1","S2","S3","S4"].reduce((acc, s) => { acc[s] = data.defects.filter(d => d.severity === s).length; return acc; }, {});
+    const openDefects = data.defects.filter(d => d.phase !== "D8");
+    const sprintItems = activeSprint
+      ? data.agileItems.filter(a => a.col !== "Backlog")
+      : [];
+
+    const row = (cells, header = false) =>
+      `<tr>${cells.map(c => `<${header ? "th" : "td"}>${c}</${header ? "th" : "td"}>`).join("")}</tr>`;
+
+    const html = `<!DOCTYPE html><html><head><meta charset="UTF-8">
+<title>FlowForge Dashboard — ${dateStr}</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&display=swap');
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: #1a1a2e; background: #fff; padding: 32px 40px; }
+  h1 { font-size: 28px; letter-spacing: 4px; text-transform: uppercase; color: #1a1a2e; }
+  h2 { font-size: 13px; letter-spacing: 2px; text-transform: uppercase; color: #F97316; margin: 28px 0 10px; border-bottom: 2px solid #F97316; padding-bottom: 6px; }
+  h3 { font-size: 11px; letter-spacing: 1px; color: #444; margin: 16px 0 8px; }
+  .header { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 24px; padding-bottom: 16px; border-bottom: 3px solid #1a1a2e; }
+  .header-meta { font-size: 10px; color: #666; text-align: right; line-height: 1.8; }
+  .logo { display: flex; align-items: center; gap: 10px; }
+  .logo-box { width: 36px; height: 36px; background: #F97316; border-radius: 4px; display: flex; align-items: center; justify-content: center; font-weight: 700; color: #fff; font-size: 16px; letter-spacing: 1px; }
+  .metrics { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; margin-bottom: 8px; }
+  .metric { background: #f5f5f8; border-radius: 6px; padding: 12px 14px; border-left: 3px solid #F97316; }
+  .metric-val { font-size: 22px; font-weight: 600; color: #1a1a2e; line-height: 1; }
+  .metric-label { font-size: 9px; letter-spacing: 1px; color: #888; margin-top: 4px; text-transform: uppercase; }
+  table { width: 100%; border-collapse: collapse; font-size: 10px; margin-top: 4px; }
+  th { background: #f0f0f5; padding: 7px 10px; text-align: left; font-size: 9px; letter-spacing: 1px; text-transform: uppercase; color: #555; font-weight: 600; border-bottom: 2px solid #ddd; }
+  td { padding: 7px 10px; border-bottom: 1px solid #eee; vertical-align: top; }
+  tr:last-child td { border-bottom: none; }
+  .badge { display: inline-block; padding: 2px 7px; border-radius: 3px; font-size: 9px; font-weight: 600; letter-spacing: 0.5px; }
+  .s1 { background: #fee2e2; color: #b91c1c; }
+  .s2 { background: #ffedd5; color: #c2410c; }
+  .s3 { background: #fef9c3; color: #a16207; }
+  .s4 { background: #ccfbf1; color: #0f766e; }
+  .col-done { background: #dcfce7; color: #166534; }
+  .col-prog { background: #dbeafe; color: #1d4ed8; }
+  .col-review { background: #fef9c3; color: #a16207; }
+  .col-sprint { background: #ccfbf1; color: #0f766e; }
+  .col-backlog { background: #f1f5f9; color: #475569; }
+  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  .progress-bar { background: #e5e7eb; border-radius: 4px; height: 6px; margin-top: 6px; }
+  .progress-fill { height: 100%; border-radius: 4px; background: #14B8A6; }
+  .footer { margin-top: 32px; padding-top: 12px; border-top: 1px solid #ddd; font-size: 9px; color: #aaa; display: flex; justify-content: space-between; }
+  @media print {
+    body { padding: 20px 28px; }
+    h2 { break-before: avoid; }
+    table { break-inside: avoid; }
+    .no-break { break-inside: avoid; }
+  }
+</style></head><body>
+
+<div class="header">
+  <div class="logo">
+    <div class="logo-box">FF</div>
+    <div>
+      <h1>FlowForge</h1>
+      <div style="font-size:10px;color:#888;letter-spacing:2px;margin-top:2px;">PROJECT DASHBOARD REPORT</div>
+    </div>
+  </div>
+  <div class="header-meta">
+    <div>${dateStr}</div>
+    <div>${data.sprints.filter(s => s.status === "active").map(s => s.name + " · Active").join(", ") || "No active sprint"}</div>
+    <div>${data.agileItems.length} stories · ${data.defects.length} defects tracked</div>
+  </div>
+</div>
+
+<h2>Key Metrics</h2>
+<div class="metrics">
+  <div class="metric"><div class="metric-val">${data.agileItems.length}</div><div class="metric-label">Total Stories</div></div>
+  <div class="metric"><div class="metric-val">${colCounts["Done"] ?? 0}</div><div class="metric-label">Completed</div></div>
+  <div class="metric"><div class="metric-val">${openDefects.length}</div><div class="metric-label">Open Defects</div></div>
+  <div class="metric"><div class="metric-val">${data.defects.filter(d => d.severity === "S1" || d.severity === "S2").length}</div><div class="metric-label">Critical (S1/S2)</div></div>
+  <div class="metric"><div class="metric-val">${activeSprint ? Math.round((activeSprint.velocity / activeSprint.target) * 100) + "%" : "—"}</div><div class="metric-label">Sprint Velocity</div></div>
+</div>
+
+${activeSprint ? `
+<h2>Active Sprint — ${activeSprint.name}</h2>
+<div class="no-break">
+  <div style="display:flex;gap:24px;margin-bottom:10px;font-size:10px;color:#555;">
+    <span><b>Dates:</b> ${activeSprint.start} → ${activeSprint.end}</span>
+    <span><b>Velocity:</b> ${activeSprint.velocity} / ${activeSprint.target} pts</span>
+    <span><b>Stories in flight:</b> ${sprintItems.length}</span>
+  </div>
+  <div class="progress-bar"><div class="progress-fill" style="width:${Math.min(Math.round((activeSprint.velocity / activeSprint.target) * 100), 100)}%"></div></div>
+  <table style="margin-top:12px;">
+    <thead>${row(["Type","Story","Assignee","Pts","Status","Priority","8D Link"], true)}</thead>
+    <tbody>
+      ${sprintItems.map(item => row([
+        `<span class="badge col-sprint">${item.type}</span>`,
+        item.title,
+        `<b>${item.assignee}</b>`,
+        item.points,
+        `<span class="badge ${item.col === "Done" ? "col-done" : item.col === "In Progress" ? "col-prog" : item.col === "Review" ? "col-review" : "col-sprint"}">${item.col}</span>`,
+        item.priority,
+        item.linkedDefectId ? `<span class="badge s2">${item.linkedDefectId}</span>` : "—",
+      ])).join("")}
+    </tbody>
+  </table>
+</div>` : ""}
+
+<h2>8D Defect Tracker</h2>
+<div style="display:flex;gap:12px;margin-bottom:12px;">
+  ${["S1","S2","S3","S4"].map(s => `<div class="metric" style="padding:8px 14px;border-left-color:${s==="S1"?"#ef4444":s==="S2"?"#f97316":s==="S3"?"#eab308":"#14b8a6"}"><div class="metric-val" style="font-size:18px;">${sevCounts[s]}</div><div class="metric-label">${s} Severity</div></div>`).join("")}
+</div>
+<table>
+  <thead>${row(["ID","Title","Severity","Phase","Owner","Due Date","Root Cause"], true)}</thead>
+  <tbody>
+    ${data.defects.map(d => row([
+      `<b>${d.id}</b>`,
+      d.title,
+      `<span class="badge ${d.severity.toLowerCase()}">${d.severity}</span>`,
+      `<b>${d.phase}</b>`,
+      d.owner,
+      d.dueDate,
+      d.rootCause ? d.rootCause.slice(0, 60) + (d.rootCause.length > 60 ? "…" : "") : "<i style='color:#aaa'>Pending</i>",
+    ])).join("")}
+  </tbody>
+</table>
+
+<h2>Agile Board Summary</h2>
+<div class="two-col no-break">
+  <div>
+    <h3>Stories by Status</h3>
+    <table>
+      <thead>${row(["Column","Count","% of Total"], true)}</thead>
+      <tbody>
+        ${AGILE_COLS.map(col => row([
+          `<span class="badge ${col==="Done"?"col-done":col==="In Progress"?"col-prog":col==="Review"?"col-review":col==="In Sprint"?"col-sprint":"col-backlog"}">${col}</span>`,
+          colCounts[col] ?? 0,
+          data.agileItems.length ? Math.round(((colCounts[col] ?? 0) / data.agileItems.length) * 100) + "%" : "—",
+        ])).join("")}
+      </tbody>
+    </table>
+  </div>
+  <div>
+    <h3>8D ↔ Agile Bridge</h3>
+    <table>
+      <thead>${row(["Defect","Story","Phase","Status"], true)}</thead>
+      <tbody>
+        ${data.defects.filter(d => d.linkedStory).map(d => {
+          const story = data.agileItems.find(a => a.id === d.linkedStory);
+          return row([`<b>${d.id}</b>`, story ? story.title.slice(0,28)+"…" : d.linkedStory, d.phase, `<span class="badge col-sprint">Linked</span>`]);
+        }).join("")}
+        ${data.defects.filter(d => d.linkedStory).length === 0 ? `<tr><td colspan="4" style="color:#aaa;font-style:italic;">No linked items</td></tr>` : ""}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<h2>All Stories</h2>
+<table>
+  <thead>${row(["ID","Title","Type","Assignee","Pts","Priority","Status","Sprint","8D"], true)}</thead>
+  <tbody>
+    ${data.agileItems.map(item => {
+      const sprint = data.sprints.find(s => s.id === item.sprintId);
+      return row([
+        item.id,
+        item.title,
+        `<span class="badge col-sprint">${item.type}</span>`,
+        item.assignee,
+        item.points,
+        item.priority,
+        `<span class="badge ${item.col==="Done"?"col-done":item.col==="In Progress"?"col-prog":item.col==="Review"?"col-review":item.col==="In Sprint"?"col-sprint":"col-backlog"}">${item.col}</span>`,
+        sprint ? sprint.name : "—",
+        item.linkedDefectId ?? "—",
+      ]);
+    }).join("")}
+  </tbody>
+</table>
+
+<div class="footer">
+  <span>FlowForge · Generated ${now.toISOString()}</span>
+  <span>CONFIDENTIAL — INTERNAL USE ONLY</span>
+</div>
+
+<script>window.onload = function() { window.print(); }</script>
+</body></html>`;
+
+    const win = window.open("", "_blank");
+    win.document.write(html);
+    win.document.close();
+  };
+
   if (loading) {
     return (
       <div style={{ fontFamily: "'IBM Plex Mono', monospace", background: COLORS.bg, minHeight: "100vh", color: COLORS.textMuted, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, letterSpacing: 2 }}>
@@ -403,6 +592,10 @@ export default function FlowForge() {
           <button className="nav-btn" onClick={() => setShowSearch(true)}
             style={{ padding: "5px 12px", fontSize: 10, background: COLORS.purpleDim, color: COLORS.purple, borderRadius: 4, fontFamily: "inherit", letterSpacing: 1 }}>
             ⌕ AI SEARCH
+          </button>
+          <button className="nav-btn" onClick={printDashboard}
+            style={{ padding: "5px 12px", fontSize: 10, background: COLORS.greenDim, color: COLORS.green, borderRadius: 4, fontFamily: "inherit", letterSpacing: 1, border: `1px solid ${COLORS.green}33` }}>
+            ↓ EXPORT
           </button>
           {data.sprints.filter(s => s.status === "active").map(s => (
             <div key={s.id} style={{ display: "flex", alignItems: "center", gap: 6 }}>
