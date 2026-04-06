@@ -136,6 +136,7 @@ export default function FlowForge() {
   const [sprintPlan, setSprintPlan] = useState(null);
   const [storyPrompt, setStoryPrompt] = useState("");
   const [rcaPanel, setRcaPanel] = useState(null); // { defectId, tool, result }
+  const [addingToSprint, setAddingToSprint] = useState(null); // sprintId showing the add-story picker
 
   const callAI = async (action, payload) => {
     setAiLoading(true);
@@ -271,6 +272,17 @@ export default function FlowForge() {
     setData(d => ({ ...d, agileItems: d.agileItems.map(a => a.id === updated.id ? updated : a) }));
     setSelectedCard(updated);
     setEditingCard(false);
+  };
+
+  const assignToSprint = async (storyId, sprintId) => {
+    const sprint = data.sprints.find(s => s.id === sprintId);
+    const item = data.agileItems.find(a => a.id === storyId);
+    const colUpdate = sprint?.status === "active" && item?.col === "Backlog" ? { col: "In Sprint" } : {};
+    const body = { ...item, sprintId: sprintId || null, ...colUpdate };
+    const res = await fetch(`/api/agile/${storyId}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    const updated = await res.json();
+    setData(d => ({ ...d, agileItems: d.agileItems.map(a => a.id === updated.id ? updated : a) }));
+    return updated;
   };
 
   const deleteDefect = async (id) => {
@@ -776,6 +788,29 @@ export default function FlowForge() {
                                   </tbody>
                                 </table>
                               )}
+                              <div style={{ marginTop: 12, display: "flex", alignItems: "center", gap: 8 }}>
+                                {addingToSprint === sprint.id ? (
+                                  <>
+                                    <select defaultValue="" onChange={async e => {
+                                      if (!e.target.value) return;
+                                      await assignToSprint(e.target.value, sprint.id);
+                                      setAddingToSprint(null);
+                                    }} style={{ flex: 1, background: COLORS.card, border: `1px solid ${COLORS.teal}44`, borderRadius: 4, padding: "5px 8px", color: COLORS.text, fontSize: 11, fontFamily: "inherit", outline: "none" }}>
+                                      <option value="">— select a story to add —</option>
+                                      {data.agileItems.filter(a => !a.sprintId && a.col === "Backlog").map(a => (
+                                        <option key={a.id} value={a.id}>{a.id} · {a.title} ({a.points}p · {a.priority})</option>
+                                      ))}
+                                    </select>
+                                    <button className="nav-btn" onClick={() => setAddingToSprint(null)}
+                                      style={{ padding: "5px 10px", background: COLORS.border, color: COLORS.textMuted, borderRadius: 4, fontSize: 10, fontFamily: "inherit" }}>✕</button>
+                                  </>
+                                ) : (
+                                  <button className="nav-btn" onClick={() => setAddingToSprint(sprint.id)}
+                                    style={{ padding: "5px 14px", fontSize: 9, background: COLORS.tealDim, color: COLORS.teal, borderRadius: 4, fontFamily: "inherit", letterSpacing: 1, border: `1px solid ${COLORS.teal}33` }}>
+                                    + ADD STORY
+                                  </button>
+                                )}
+                              </div>
                             </div>
                           )}
                         </>
@@ -1498,7 +1533,15 @@ export default function FlowForge() {
                 );
               })}
             </div>
-            <div style={{ padding: "12px 20px", borderTop: `1px solid ${COLORS.border}` }}>
+            <div style={{ padding: "12px 20px", borderTop: `1px solid ${COLORS.border}`, display: "flex", gap: 8 }}>
+              <button className="nav-btn" onClick={async () => {
+                for (const id of sprintPlan.recommended) {
+                  await assignToSprint(id, sprintPlan.sprintId);
+                }
+                setSprintPlan(null);
+              }} style={{ padding: "6px 16px", background: COLORS.teal, color: "#fff", borderRadius: 4, fontSize: 10, fontWeight: 700, letterSpacing: 1, fontFamily: "inherit" }}>
+                APPLY TO SPRINT →
+              </button>
               <button className="nav-btn" onClick={() => setSprintPlan(null)}
                 style={{ padding: "6px 14px", background: COLORS.border, color: COLORS.textMuted, borderRadius: 4, fontSize: 10, fontFamily: "inherit" }}>
                 CLOSE
@@ -1556,6 +1599,16 @@ export default function FlowForge() {
                       style={{ flex: 1, padding: "5px 0", fontSize: 10, borderRadius: 4, fontFamily: "inherit", background: cardEditForm.priority === p ? priorityColor(p) : COLORS.border, color: cardEditForm.priority === p ? "#fff" : COLORS.textMuted }}>{p}</button>
                   ))}
                 </div>
+              </div>
+              <div style={{ marginBottom: 20 }}>
+                <div style={{ fontSize: 9, letterSpacing: 1, color: COLORS.textMuted, marginBottom: 5 }}>SPRINT</div>
+                <select value={cardEditForm.sprintId ?? ""} onChange={e => setCardEditForm(f => ({ ...f, sprintId: e.target.value || null }))}
+                  style={{ width: "100%", background: COLORS.card, border: `1px solid ${COLORS.border}`, borderRadius: 4, padding: "7px 10px", color: COLORS.text, fontSize: 12, fontFamily: "inherit", outline: "none" }}>
+                  <option value="">— Backlog (no sprint) —</option>
+                  {data.sprints.filter(s => s.status !== "completed").map(s => (
+                    <option key={s.id} value={s.id}>{s.name} · {s.status}</option>
+                  ))}
+                </select>
               </div>
               <div style={{ display: "flex", gap: 8 }}>
                 <button className="nav-btn" onClick={saveCardEdit}
@@ -1626,6 +1679,31 @@ export default function FlowForge() {
               <div style={{ marginBottom: 16 }}>
                 <div style={{ fontSize: 9, letterSpacing: 1, color: COLORS.textMuted, marginBottom: 6 }}>STATUS</div>
                 <div style={{ fontSize: 11, padding: "4px 12px", background: COLORS.tealDim, color: COLORS.teal, borderRadius: 4, display: "inline-block" }}>{selectedCard.col}</div>
+              </div>
+              <div style={{ marginBottom: 16 }}>
+                <div style={{ fontSize: 9, letterSpacing: 1, color: COLORS.textMuted, marginBottom: 6 }}>SPRINT</div>
+                {selectedCard.sprintId ? (
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <div style={{ fontSize: 11, padding: "4px 12px", background: COLORS.purpleDim, color: COLORS.purple, borderRadius: 4 }}>
+                      {data.sprints.find(s => s.id === selectedCard.sprintId)?.name ?? selectedCard.sprintId}
+                    </div>
+                    <button className="nav-btn" onClick={async () => {
+                      const updated = await assignToSprint(selectedCard.id, null);
+                      setSelectedCard(updated);
+                    }} style={{ fontSize: 9, padding: "3px 8px", background: COLORS.redDim, color: COLORS.red, borderRadius: 4, fontFamily: "inherit", letterSpacing: 1 }}>UNASSIGN</button>
+                  </div>
+                ) : (
+                  <select defaultValue="" onChange={async e => {
+                    if (!e.target.value) return;
+                    const updated = await assignToSprint(selectedCard.id, e.target.value);
+                    setSelectedCard(updated);
+                  }} style={{ width: "100%", background: COLORS.card, border: `1px solid ${COLORS.border}`, borderRadius: 4, padding: "5px 8px", color: COLORS.text, fontSize: 11, fontFamily: "inherit", outline: "none" }}>
+                    <option value="">— assign to sprint —</option>
+                    {data.sprints.filter(s => s.status !== "completed").map(s => (
+                      <option key={s.id} value={s.id}>{s.name} · {s.status}</option>
+                    ))}
+                  </select>
+                )}
               </div>
               <div style={{ marginBottom: 24 }}>
                 <div style={{ fontSize: 9, letterSpacing: 1, color: COLORS.textMuted, marginBottom: 6 }}>MOVE TO</div>
