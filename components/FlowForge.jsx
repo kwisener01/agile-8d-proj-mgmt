@@ -183,7 +183,8 @@ export default function FlowForge() {
   const submitNewDefect = async () => {
     if (!newDefectForm.title) { alert("Title is required."); return; }
     if (!newDefectForm.owner) { alert("Owner is required."); return; }
-    const id = `8D-${String(data.defects.length + 1).padStart(3, "0")}`;
+    const maxNum = data.defects.reduce((m, d) => Math.max(m, parseInt(d.id.replace("8D-", "")) || 0), 0);
+    const id = `8D-${String(maxNum + 1).padStart(3, "0")}`;
     const teamArr = newDefectForm.team ? newDefectForm.team.split(",").map(t => t.trim()).filter(Boolean) : [newDefectForm.owner];
     const body = {
       id,
@@ -322,7 +323,8 @@ export default function FlowForge() {
 
   const submitNewSprint = async () => {
     if (!newSprintForm.name || !newSprintForm.start || !newSprintForm.end) return;
-    const id = `SP-${String(data.sprints.length + 1).padStart(2, "0")}`;
+    const maxSprintNum = data.sprints.reduce((m, s) => Math.max(m, parseInt(s.id.replace("SP-", "")) || 0), 0);
+    const id = `SP-${String(maxSprintNum + 1).padStart(2, "0")}`;
     const body = { ...newSprintForm, id, velocity: 0, target: Number(newSprintForm.target) };
     const res = await fetch("/api/sprints", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
     const created = await res.json();
