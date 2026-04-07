@@ -52,4 +52,15 @@ model Defect {
   description String
   bridged     Boolean     @default(false)
   agileItems  AgileItem[]
+  evidence    Evidence[]
+}
+
+model Evidence {
+  id         String  @id
+  defectId   String
+  defect     Defect  @relation(fields: [defectId], references: [id])
+  url        String
+  caption    String  @default("")
+  phase      String  @default("")
+  uploadedAt String
 }

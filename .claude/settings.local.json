@@ -38,7 +38,14 @@
       "Bash(vercel:*)",
       "Bash(curl:*)",
       "mcp__plugin_playwright_playwright__browser_snapshot",
-      "Bash(printf '%s' 'https://8dprojectmgmt-kwisener01.aws-us-east-1.turso.io')"
+      "Bash(printf '%s' 'https://8dprojectmgmt-kwisener01.aws-us-east-1.turso.io')",
+      "Bash(cat /c/Projects/agile_8d_proj_mgmt/app/api/sprints/[id]/route.js)",
+      "mcp__plugin_playwright_playwright__browser_click",
+      "mcp__plugin_playwright_playwright__browser_fill_form",
+      "mcp__plugin_playwright_playwright__browser_type",
+      "mcp__plugin_playwright_playwright__browser_console_messages",
+      "Bash(npx vercel:*)",
+      "Bash(npm list:*)"
     ]
   }
 }

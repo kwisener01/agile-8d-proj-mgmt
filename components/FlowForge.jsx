@@ -137,6 +137,11 @@ export default function FlowForge() {
   const [storyPrompt, setStoryPrompt] = useState("");
   const [rcaPanel, setRcaPanel] = useState(null); // { defectId, tool, result }
   const [addingToSprint, setAddingToSprint] = useState(null); // sprintId showing the add-story picker
+  const [evidence, setEvidence] = useState({}); // { [defectId]: [...] }
+  const [uploadingEvidence, setUploadingEvidence] = useState(false);
+  const [lightboxImg, setLightboxImg] = useState(null);
+  const [evidenceCaption, setEvidenceCaption] = useState("");
+  const [evidencePhase, setEvidencePhase] = useState("");
 
   const callAI = async (action, payload) => {
     setAiLoading(true);
@@ -279,6 +284,35 @@ export default function FlowForge() {
 
   const notify = (type, payload) =>
     fetch("/api/notify", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type, ...payload }) }).catch(() => {});
+
+  const fetchEvidence = async (defectId) => {
+    if (evidence[defectId]) return; // already loaded
+    const res = await fetch(`/api/evidence?defectId=${defectId}`);
+    const items = await res.json();
+    setEvidence(e => ({ ...e, [defectId]: items }));
+  };
+
+  const uploadEvidence = async (defectId, file, caption, phase) => {
+    setUploadingEvidence(true);
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      const upRes = await fetch("/api/upload", { method: "POST", body: form });
+      const { url } = await upRes.json();
+      const saveRes = await fetch("/api/evidence", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ defectId, url, caption, phase }) });
+      const item = await saveRes.json();
+      setEvidence(e => ({ ...e, [defectId]: [item, ...(e[defectId] || [])] }));
+      setEvidenceCaption("");
+      setEvidencePhase("");
+    } finally {
+      setUploadingEvidence(false);
+    }
+  };
+
+  const deleteEvidence = async (defectId, evidenceId) => {
+    await fetch(`/api/evidence/${evidenceId}`, { method: "DELETE" });
+    setEvidence(e => ({ ...e, [defectId]: (e[defectId] || []).filter(i => i.id !== evidenceId) }));
+  };
 
   const assignToSprint = async (storyId, sprintId) => {
     const sprint = data.sprints.find(s => s.id === sprintId);
@@ -691,7 +725,7 @@ ${activeSprint ? `
 
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
               {data.defects.map(d => (
-                <DefectRow key={d.id} defect={d} onClick={() => { setSelectedDefect(d); setInlineDefectFields({}); }} />
+                <DefectRow key={d.id} defect={d} onClick={() => { setSelectedDefect(d); setInlineDefectFields({}); fetchEvidence(d.id); }} />
               ))}
             </div>
           </div>
@@ -730,7 +764,7 @@ ${activeSprint ? `
                 <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
                   <span style={{ fontSize: 11, color: severityColor(d.severity), fontWeight: 700 }}>{d.severity}</span>
                   <span style={{ fontSize: 11, color: COLORS.textMuted }}>{d.id}</span>
-                  <span className="card-hover" style={{ fontSize: 12, flex: 1, cursor: "pointer" }} onClick={() => { setSelectedDefect(d); setInlineDefectFields({}); }}>{d.title}</span>
+                  <span className="card-hover" style={{ fontSize: 12, flex: 1, cursor: "pointer" }} onClick={() => { setSelectedDefect(d); setInlineDefectFields({}); fetchEvidence(d.id); }}>{d.title}</span>
                   <button className="nav-btn" onClick={() => createStoryFromDefect(d)} style={{ fontSize: 10, background: COLORS.tealDim, color: COLORS.teal, padding: "4px 10px", borderRadius: 4, letterSpacing: 1, fontFamily: "inherit" }}>
                     CREATE STORY →
                   </button>
@@ -1326,6 +1360,65 @@ ${activeSprint ? `
                 })()}
               </div>
 
+              {/* EVIDENCE */}
+              <div style={{ marginTop: 16, background: COLORS.card, border: `1px solid ${COLORS.border}`, borderRadius: 8, overflow: "hidden" }}>
+                <div style={{ padding: "10px 14px", borderBottom: `1px solid ${COLORS.border}`, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                  <div style={{ fontSize: 9, color: COLORS.accent, letterSpacing: 1, fontWeight: 700 }}>EVIDENCE / PHOTOS</div>
+                  <div style={{ fontSize: 9, color: COLORS.textMuted }}>{(evidence[selectedDefect.id] || []).length} attached</div>
+                </div>
+                <div style={{ padding: "12px 14px" }}>
+                  {/* Upload row */}
+                  <div style={{ display: "flex", gap: 6, marginBottom: 10, flexWrap: "wrap" }}>
+                    <input value={evidenceCaption} onChange={e => setEvidenceCaption(e.target.value)} placeholder="Caption (optional)"
+                      style={{ flex: 1, minWidth: 120, background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: 4, padding: "5px 8px", color: COLORS.text, fontSize: 10, fontFamily: "inherit", outline: "none" }} />
+                    <select value={evidencePhase} onChange={e => setEvidencePhase(e.target.value)}
+                      style={{ background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: 4, padding: "5px 8px", color: evidencePhase ? COLORS.text : COLORS.textMuted, fontSize: 10, fontFamily: "inherit", outline: "none" }}>
+                      <option value="">Phase (optional)</option>
+                      {D_PHASES.map(p => <option key={p.id} value={p.id}>{p.id} — {p.name}</option>)}
+                    </select>
+                    <label style={{ cursor: uploadingEvidence ? "not-allowed" : "pointer" }}>
+                      <input type="file" accept="image/*,video/*,.pdf" style={{ display: "none" }} disabled={uploadingEvidence}
+                        onChange={async e => {
+                          const file = e.target.files[0];
+                          if (file) await uploadEvidence(selectedDefect.id, file, evidenceCaption, evidencePhase);
+                          e.target.value = "";
+                        }} />
+                      <div style={{ padding: "5px 12px", background: uploadingEvidence ? COLORS.border : COLORS.accentDim, color: uploadingEvidence ? COLORS.textMuted : COLORS.accent, borderRadius: 4, fontSize: 9, fontWeight: 700, letterSpacing: 1, whiteSpace: "nowrap" }}>
+                        {uploadingEvidence ? "UPLOADING..." : "+ ATTACH"}
+                      </div>
+                    </label>
+                  </div>
+                  {/* Photo grid */}
+                  {(evidence[selectedDefect.id] || []).length === 0 ? (
+                    <div style={{ fontSize: 10, color: COLORS.textMuted, textAlign: "center", padding: "16px 0" }}>No evidence attached yet. Upload photos, PDFs, or screenshots.</div>
+                  ) : (
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8 }}>
+                      {(evidence[selectedDefect.id] || []).map(item => (
+                        <div key={item.id} style={{ position: "relative", borderRadius: 6, overflow: "hidden", border: `1px solid ${COLORS.border}`, background: COLORS.surface }}>
+                          {item.url.match(/\.(jpg|jpeg|png|gif|webp)$/i) ? (
+                            <img src={item.url} alt={item.caption} onClick={() => setLightboxImg(item.url)}
+                              style={{ width: "100%", aspectRatio: "1", objectFit: "cover", cursor: "zoom-in", display: "block" }} />
+                          ) : (
+                            <a href={item.url} target="_blank" rel="noreferrer"
+                              style={{ display: "flex", alignItems: "center", justifyContent: "center", aspectRatio: "1", background: COLORS.card, fontSize: 22, textDecoration: "none" }}>
+                              {item.url.endsWith(".pdf") ? "📄" : "📎"}
+                            </a>
+                          )}
+                          <div style={{ padding: "5px 6px" }}>
+                            {item.phase && <div style={{ fontSize: 8, color: COLORS.accent, letterSpacing: 1, marginBottom: 2 }}>{item.phase}</div>}
+                            {item.caption && <div style={{ fontSize: 9, color: COLORS.textDim, lineHeight: 1.3 }}>{item.caption}</div>}
+                          </div>
+                          <button className="nav-btn" onClick={() => deleteEvidence(selectedDefect.id, item.id)}
+                            style={{ position: "absolute", top: 4, right: 4, width: 18, height: 18, borderRadius: "50%", background: COLORS.redDim, color: COLORS.red, fontSize: 10, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "inherit", lineHeight: 1 }}>
+                            ×
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+
               <div style={{ marginTop: 16, background: COLORS.tealDim, border: `1px solid ${COLORS.teal}22`, borderRadius: 6, padding: "10px 14px" }}>
                 <div style={{ fontSize: 9, color: COLORS.teal, letterSpacing: 1, marginBottom: 6 }}>LINKED AGILE STORY</div>
                 {selectedDefect.linkedStory ? (
@@ -1750,6 +1843,14 @@ ${activeSprint ? `
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* LIGHTBOX */}
+      {lightboxImg && (
+        <div onClick={() => setLightboxImg(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.9)", zIndex: 500, display: "flex", alignItems: "center", justifyContent: "center", cursor: "zoom-out", padding: 24 }}>
+          <img src={lightboxImg} alt="Evidence" style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain", borderRadius: 6, boxShadow: "0 8px 40px rgba(0,0,0,0.6)" }} />
+          <button onClick={() => setLightboxImg(null)} style={{ position: "absolute", top: 20, right: 24, background: "rgba(255,255,255,0.1)", border: "none", color: "#fff", fontSize: 22, width: 40, height: 40, borderRadius: "50%", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>×</button>
         </div>
       )}
 
