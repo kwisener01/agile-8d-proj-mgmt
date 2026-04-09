@@ -51,6 +51,8 @@ model Defect {
   recognition       String  @default("")
   description String
   bridged     Boolean     @default(false)
+  isIsNot     String      @default("{}")
+  fiveW2H     String      @default("{}")
   agileItems  AgileItem[]
   evidence    Evidence[]
 }

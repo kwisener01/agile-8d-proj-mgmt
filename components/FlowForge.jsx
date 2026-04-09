@@ -104,8 +104,16 @@ export default function FlowForge() {
       fetch("/api/agile").then((r) => r.json()),
       fetch("/api/defects").then((r) => r.json()),
       fetch("/api/sprints").then((r) => r.json()),
-    ]).then(([agileItems, defects, sprints]) => {
+      fetch("/api/evidence").then((r) => r.json()),
+    ]).then(([agileItems, defects, sprints, allEvidence]) => {
+      // Group evidence by defectId so it's immediately available
+      const evidenceMap = {};
+      for (const item of allEvidence) {
+        if (!evidenceMap[item.defectId]) evidenceMap[item.defectId] = [];
+        evidenceMap[item.defectId].push(item);
+      }
       setData({ agileItems, defects, sprints });
+      setEvidence(evidenceMap);
       setLoading(false);
     });
   }, []);
@@ -142,6 +150,44 @@ export default function FlowForge() {
   const [lightboxImg, setLightboxImg] = useState(null);
   const [evidenceCaption, setEvidenceCaption] = useState("");
   const [evidencePhase, setEvidencePhase] = useState("");
+  const [isIsNotData, setIsIsNotData] = useState({}); // { [defectId]: { what, where, when, who, howMuch } }
+  const [fiveW2HData, setFiveW2HData] = useState({}); // { [defectId]: { what, why, where, when, who, how, howMuch } }
+
+  // Initialize Is/Is Not and 5W2H from selected defect
+  useEffect(() => {
+    if (!selectedDefect) return;
+    const src = selectedDefect.isIsNot || {};
+    setIsIsNotData(prev => ({
+      ...prev,
+      [selectedDefect.id]: {
+        what:    { is: "", isNot: "", ...(src.what    || {}) },
+        where:   { is: "", isNot: "", ...(src.where   || {}) },
+        when:    { is: "", isNot: "", ...(src.when    || {}) },
+        who:     { is: "", isNot: "", ...(src.who     || {}) },
+        howMuch: { is: "", isNot: "", ...(src.howMuch || {}) },
+      },
+    }));
+    const s5 = selectedDefect.fiveW2H || {};
+    setFiveW2HData(prev => ({
+      ...prev,
+      [selectedDefect.id]: {
+        what: s5.what || "", why: s5.why || "", where: s5.where || "",
+        when: s5.when || "", who: s5.who || "", how: s5.how || "", howMuch: s5.howMuch || "",
+      },
+    }));
+  }, [selectedDefect?.id]);
+
+  const saveIsIsNot = async (defectId, isIsNot) => {
+    await fetch(`/api/defects/${defectId}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ isIsNot }) });
+    setData(d => ({ ...d, defects: d.defects.map(def => def.id === defectId ? { ...def, isIsNot } : def) }));
+    setSelectedDefect(s => s?.id === defectId ? { ...s, isIsNot } : s);
+  };
+
+  const saveFiveW2H = async (defectId, fiveW2H) => {
+    await fetch(`/api/defects/${defectId}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fiveW2H }) });
+    setData(d => ({ ...d, defects: d.defects.map(def => def.id === defectId ? { ...def, fiveW2H } : def) }));
+    setSelectedDefect(s => s?.id === defectId ? { ...s, fiveW2H } : s);
+  };
 
   const callAI = async (action, payload) => {
     setAiLoading(true);
@@ -286,7 +332,6 @@ export default function FlowForge() {
     fetch("/api/notify", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type, ...payload }) }).catch(() => {});
 
   const fetchEvidence = async (defectId) => {
-    if (evidence[defectId]) return; // already loaded
     const res = await fetch(`/api/evidence?defectId=${defectId}`);
     const items = await res.json();
     setEvidence(e => ({ ...e, [defectId]: items }));
@@ -579,11 +624,165 @@ ${activeSprint ? `
   </tbody>
 </table>
 
+<h2>Pareto Analysis — Defects by Severity</h2>
+<div class="two-col no-break">
+  <div>${buildParetoSVG(data.defects)}</div>
+  <div>
+    <h3>Cumulative Breakdown</h3>
+    <table>
+      <thead>${row(["Severity","Count","% of Total","Cumulative %"], true)}</thead>
+      <tbody>${(() => {
+        const sevs = ["S1","S2","S3","S4"]
+          .map(s => ({ label: s, count: data.defects.filter(d => d.severity === s).length }))
+          .sort((a, b) => b.count - a.count);
+        const tot = sevs.reduce((s, c) => s + c.count, 0) || 1;
+        let cum = 0;
+        return sevs.map(c => { cum += c.count; return row([`<b>${c.label}</b>`, c.count, Math.round((c.count/tot)*100)+"%", Math.round((cum/tot)*100)+"%"]); }).join("");
+      })()}</tbody>
+    </table>
+  </div>
+</div>
+
 <div class="footer">
   <span>FlowForge · Generated ${now.toISOString()}</span>
   <span>CONFIDENTIAL — INTERNAL USE ONLY</span>
 </div>
 
+<script>window.onload = function() { window.print(); }</script>
+</body></html>`;
+
+    const win = window.open("", "_blank");
+    win.document.write(html);
+    win.document.close();
+  };
+
+  const buildParetoSVG = (defects) => {
+    const sevOrder = ["S1","S2","S3","S4"];
+    const counts = sevOrder
+      .map(s => ({ label: s, count: defects.filter(d => d.severity === s).length }))
+      .sort((a, b) => b.count - a.count);
+    const total = counts.reduce((s, c) => s + c.count, 0) || 1;
+    const maxC = Math.max(...counts.map(c => c.count), 1);
+    const W = 400, H = 160, barW = 60, gap = 20, padL = 30, padB = 28;
+    const chartH = H - padB;
+    const colors = { S1: "#ef4444", S2: "#f97316", S3: "#eab308", S4: "#14b8a6" };
+    let cumCount = 0;
+    const bars = counts.map((c, i) => {
+      const bH = (c.count / maxC) * chartH;
+      const x = padL + i * (barW + gap);
+      cumCount += c.count;
+      return { c, bH, x, cumX: x + barW / 2, cumY: chartH - (cumCount / total) * chartH, pct: Math.round((cumCount / total) * 100) };
+    });
+    const pts = bars.map(b => `${b.cumX},${b.cumY}`).join(" ");
+    let svg = `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">`;
+    svg += `<line x1="${padL}" y1="0" x2="${padL}" y2="${chartH}" stroke="#ddd" stroke-width="1"/>`;
+    svg += `<line x1="${padL}" y1="${chartH}" x2="${W}" y2="${chartH}" stroke="#ddd" stroke-width="1"/>`;
+    bars.forEach(b => {
+      const col = colors[b.c.label] || "#888";
+      svg += `<rect x="${b.x}" y="${chartH - b.bH}" width="${barW}" height="${b.bH}" fill="${col}" rx="3" opacity="0.85"/>`;
+      svg += `<text x="${b.x + barW / 2}" y="${chartH - b.bH - 4}" text-anchor="middle" font-size="11" fill="${col}" font-weight="bold">${b.c.count}</text>`;
+      svg += `<text x="${b.x + barW / 2}" y="${H - 6}" text-anchor="middle" font-size="10" fill="#555">${b.c.label}</text>`;
+    });
+    svg += `<polyline points="${pts}" fill="none" stroke="#8b5cf6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>`;
+    bars.forEach(b => {
+      svg += `<circle cx="${b.cumX}" cy="${b.cumY}" r="4" fill="#8b5cf6"/>`;
+      svg += `<text x="${b.cumX + 6}" y="${b.cumY - 4}" font-size="9" fill="#8b5cf6">${b.pct}%</text>`;
+    });
+    svg += `</svg>`;
+    return svg;
+  };
+
+  const printPareto = (defects) => {
+    const now = new Date();
+    const dateStr = now.toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
+    const sevOrder = ["S1","S2","S3","S4"];
+    const counts = sevOrder
+      .map(s => ({ label: s, count: defects.filter(d => d.severity === s).length }))
+      .sort((a, b) => b.count - a.count);
+    const total = counts.reduce((s, c) => s + c.count, 0) || 1;
+    const phaseGroups = D_PHASES.map(p => ({ label: p.id, name: p.name, count: defects.filter(d => d.phase === p.id).length }))
+      .filter(p => p.count > 0).sort((a, b) => b.count - a.count);
+    const phaseTotal = phaseGroups.reduce((s, p) => s + p.count, 0) || 1;
+    let cumSev = 0, cumPhase = 0;
+
+    const html = `<!DOCTYPE html><html><head><meta charset="UTF-8">
+<title>FlowForge Pareto Report — ${dateStr}</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&display=swap');
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: #1a1a2e; background: #fff; padding: 32px 40px; }
+  h1 { font-size: 26px; letter-spacing: 4px; text-transform: uppercase; color: #1a1a2e; }
+  h2 { font-size: 13px; letter-spacing: 2px; text-transform: uppercase; color: #F97316; margin: 28px 0 12px; border-bottom: 2px solid #F97316; padding-bottom: 6px; }
+  .header { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 28px; padding-bottom: 16px; border-bottom: 3px solid #1a1a2e; }
+  .header-meta { font-size: 10px; color: #666; text-align: right; line-height: 1.8; }
+  .logo { display: flex; align-items: center; gap: 10px; }
+  .logo-box { width: 36px; height: 36px; background: #F97316; border-radius: 4px; display: flex; align-items: center; justify-content: center; font-weight: 700; color: #fff; font-size: 16px; }
+  .chart-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-bottom: 24px; }
+  .chart-box { border: 1px solid #e5e7eb; border-radius: 8px; padding: 16px; }
+  .chart-title { font-size: 10px; letter-spacing: 1px; text-transform: uppercase; color: #555; font-weight: 600; margin-bottom: 12px; }
+  table { width: 100%; border-collapse: collapse; font-size: 10px; margin-top: 8px; }
+  th { background: #f0f0f5; padding: 7px 10px; text-align: left; font-size: 9px; letter-spacing: 1px; text-transform: uppercase; color: #555; font-weight: 600; border-bottom: 2px solid #ddd; }
+  td { padding: 7px 10px; border-bottom: 1px solid #eee; }
+  .footer { margin-top: 32px; padding-top: 12px; border-top: 1px solid #ddd; font-size: 9px; color: #aaa; display: flex; justify-content: space-between; }
+  @media print { body { padding: 20px 28px; } }
+</style></head><body>
+<div class="header">
+  <div class="logo">
+    <div class="logo-box">FF</div>
+    <div>
+      <h1>FlowForge</h1>
+      <div style="font-size:10px;color:#888;letter-spacing:2px;margin-top:2px;">PARETO ANALYSIS REPORT</div>
+    </div>
+  </div>
+  <div class="header-meta">
+    <div>${dateStr}</div>
+    <div>${defects.length} defects analyzed</div>
+  </div>
+</div>
+
+<h2>Pareto — Defects by Severity</h2>
+<div class="chart-grid">
+  <div class="chart-box">
+    <div class="chart-title">Severity Distribution (sorted by frequency)</div>
+    ${buildParetoSVG(defects)}
+  </div>
+  <div class="chart-box">
+    <div class="chart-title">Cumulative Analysis</div>
+    <table>
+      <thead><tr><th>Severity</th><th>Count</th><th>% of Total</th><th>Cumulative %</th></tr></thead>
+      <tbody>
+        ${counts.map(c => {
+          cumSev += c.count;
+          return `<tr><td><b>${c.label}</b></td><td>${c.count}</td><td>${Math.round((c.count/total)*100)}%</td><td>${Math.round((cumSev/total)*100)}%</td></tr>`;
+        }).join("")}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<h2>Pareto — Defects by Phase</h2>
+<table>
+  <thead><tr><th>Phase</th><th>Name</th><th>Count</th><th>% of Total</th><th>Cumulative %</th></tr></thead>
+  <tbody>
+    ${phaseGroups.map(p => {
+      cumPhase += p.count;
+      return `<tr><td><b>${p.label}</b></td><td>${p.name}</td><td>${p.count}</td><td>${Math.round((p.count/phaseTotal)*100)}%</td><td>${Math.round((cumPhase/phaseTotal)*100)}%</td></tr>`;
+    }).join("")}
+  </tbody>
+</table>
+
+<h2>Defect Details</h2>
+<table>
+  <thead><tr><th>ID</th><th>Title</th><th>Severity</th><th>Phase</th><th>Owner</th><th>Due Date</th></tr></thead>
+  <tbody>
+    ${defects.map(d => `<tr><td><b>${d.id}</b></td><td>${d.title}</td><td>${d.severity}</td><td>${d.phase}</td><td>${d.owner}</td><td>${d.dueDate}</td></tr>`).join("")}
+  </tbody>
+</table>
+
+<div class="footer">
+  <span>FlowForge Pareto Report · Generated ${now.toISOString()}</span>
+  <span>CONFIDENTIAL — INTERNAL USE ONLY</span>
+</div>
 <script>window.onload = function() { window.print(); }</script>
 </body></html>`;
 
@@ -844,6 +1043,23 @@ ${activeSprint ? `
               <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: 8, padding: 18 }}>
                 <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: 1, color: COLORS.textDim, marginBottom: 14 }}>SPRINT BURNDOWN SIMULATION</div>
                 <BurndownChart />
+              </div>
+            </div>
+
+            <div style={{ marginTop: 16, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+              <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: 8, padding: 18 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+                  <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: 1, color: COLORS.textDim }}>PARETO — DEFECTS BY SEVERITY</div>
+                  <button className="nav-btn" onClick={() => printPareto(data.defects)}
+                    style={{ padding: "3px 10px", fontSize: 9, background: COLORS.greenDim, color: COLORS.green, borderRadius: 4, fontFamily: "inherit", letterSpacing: 1, border: `1px solid ${COLORS.green}33` }}>
+                    ↓ PDF
+                  </button>
+                </div>
+                <ParetoChart defects={data.defects} />
+              </div>
+              <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: 8, padding: 18 }}>
+                <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: 1, color: COLORS.textDim, marginBottom: 14 }}>PARETO — DEFECTS BY PHASE</div>
+                <ParetoChartPhase defects={data.defects} />
               </div>
             </div>
 
@@ -1174,6 +1390,82 @@ ${activeSprint ? `
                   </button>
                 </div>
               </div>
+
+              {/* D2 — IS / IS NOT */}
+              {(() => {
+                const iid = selectedDefect.id;
+                const iin = isIsNotData[iid] || { what: { is: "", isNot: "" }, where: { is: "", isNot: "" }, when: { is: "", isNot: "" }, who: { is: "", isNot: "" }, howMuch: { is: "", isNot: "" } };
+                const dims = [
+                  { key: "what", label: "WHAT" },
+                  { key: "where", label: "WHERE" },
+                  { key: "when", label: "WHEN" },
+                  { key: "who", label: "WHO" },
+                  { key: "howMuch", label: "HOW MUCH" },
+                ];
+                return (
+                  <div style={{ marginBottom: 16, background: COLORS.card, border: `1px solid ${COLORS.yellow}44`, borderRadius: 8, overflow: "hidden" }}>
+                    <div style={{ padding: "8px 14px", borderBottom: `1px solid ${COLORS.border}`, fontSize: 9, color: COLORS.yellow, letterSpacing: 1, fontWeight: 700 }}>
+                      D2 — IS / IS NOT ANALYSIS
+                    </div>
+                    <div style={{ padding: "10px 14px" }}>
+                      <div style={{ display: "grid", gridTemplateColumns: "60px 1fr 1fr", gap: 6, marginBottom: 6 }}>
+                        <div style={{ fontSize: 8, color: COLORS.textMuted, letterSpacing: 1 }}>DIM</div>
+                        <div style={{ fontSize: 8, color: COLORS.green, letterSpacing: 1, fontWeight: 700 }}>IS</div>
+                        <div style={{ fontSize: 8, color: COLORS.red, letterSpacing: 1, fontWeight: 700 }}>IS NOT</div>
+                      </div>
+                      {dims.map(({ key, label }) => (
+                        <div key={key} style={{ display: "grid", gridTemplateColumns: "60px 1fr 1fr", gap: 6, marginBottom: 6, alignItems: "start" }}>
+                          <div style={{ fontSize: 9, color: COLORS.yellow, paddingTop: 6, fontWeight: 600 }}>{label}</div>
+                          <textarea rows={2} value={iin[key]?.is || ""}
+                            onChange={e => setIsIsNotData(prev => ({ ...prev, [iid]: { ...iin, [key]: { ...iin[key], is: e.target.value } } }))}
+                            onBlur={e => saveIsIsNot(iid, { ...iin, [key]: { ...iin[key], is: e.target.value } })}
+                            placeholder={`What IS the ${label.toLowerCase()}…`}
+                            style={{ background: COLORS.surface, border: `1px solid ${COLORS.green}44`, borderRadius: 4, padding: "4px 6px", color: COLORS.text, fontSize: 10, fontFamily: "inherit", resize: "vertical", outline: "none" }} />
+                          <textarea rows={2} value={iin[key]?.isNot || ""}
+                            onChange={e => setIsIsNotData(prev => ({ ...prev, [iid]: { ...iin, [key]: { ...iin[key], isNot: e.target.value } } }))}
+                            onBlur={e => saveIsIsNot(iid, { ...iin, [key]: { ...iin[key], isNot: e.target.value } })}
+                            placeholder={`What is NOT the ${label.toLowerCase()}…`}
+                            style={{ background: COLORS.surface, border: `1px solid ${COLORS.red}44`, borderRadius: 4, padding: "4px 6px", color: COLORS.text, fontSize: 10, fontFamily: "inherit", resize: "vertical", outline: "none" }} />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* D2 — 5W2H */}
+              {(() => {
+                const iid = selectedDefect.id;
+                const f5 = fiveW2HData[iid] || { what: "", why: "", where: "", when: "", who: "", how: "", howMuch: "" };
+                const questions = [
+                  { key: "what",    label: "WHAT",     placeholder: "What is the problem?" },
+                  { key: "why",     label: "WHY",      placeholder: "Why is it important to solve?" },
+                  { key: "where",   label: "WHERE",    placeholder: "Where did it occur?" },
+                  { key: "when",    label: "WHEN",     placeholder: "When did it occur?" },
+                  { key: "who",     label: "WHO",      placeholder: "Who is affected?" },
+                  { key: "how",     label: "HOW",      placeholder: "How did it happen?" },
+                  { key: "howMuch", label: "HOW MUCH", placeholder: "What is the magnitude/cost?" },
+                ];
+                return (
+                  <div style={{ marginBottom: 16, background: COLORS.card, border: `1px solid ${COLORS.teal}44`, borderRadius: 8, overflow: "hidden" }}>
+                    <div style={{ padding: "8px 14px", borderBottom: `1px solid ${COLORS.border}`, fontSize: 9, color: COLORS.teal, letterSpacing: 1, fontWeight: 700 }}>
+                      D2 — 5W2H PROBLEM DEFINITION
+                    </div>
+                    <div style={{ padding: "10px 14px" }}>
+                      {questions.map(({ key, label, placeholder }) => (
+                        <div key={key} style={{ display: "grid", gridTemplateColumns: "60px 1fr", gap: 8, marginBottom: 8, alignItems: "start" }}>
+                          <div style={{ fontSize: 9, color: COLORS.teal, paddingTop: 6, fontWeight: 700 }}>{label}</div>
+                          <textarea rows={2} value={f5[key] || ""}
+                            onChange={e => setFiveW2HData(prev => ({ ...prev, [iid]: { ...f5, [key]: e.target.value } }))}
+                            onBlur={e => saveFiveW2H(iid, { ...f5, [key]: e.target.value })}
+                            placeholder={placeholder}
+                            style={{ background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: 4, padding: "4px 6px", color: COLORS.text, fontSize: 10, fontFamily: "inherit", resize: "vertical", outline: "none" }} />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })()}
 
               {[
                 { label: "D3 — CONTAINMENT", key: "containment", color: COLORS.teal },
@@ -2134,6 +2426,93 @@ function SprintBadge({ sprint }) {
         </div>
       </div>
     </div>
+  );
+}
+
+function ParetoChart({ defects }) {
+  const sevOrder = ["S1","S2","S3","S4"];
+  const counts = sevOrder
+    .map(s => ({ label: s, count: defects.filter(d => d.severity === s).length }))
+    .sort((a, b) => b.count - a.count);
+  const total = counts.reduce((s, c) => s + c.count, 0) || 1;
+  const maxC = Math.max(...counts.map(c => c.count), 1);
+  const W = 300, H = 120, barW = 50, gap = 14, padL = 28, padB = 28;
+  const chartH = H - padB;
+  const sevColors = { S1: COLORS.red, S2: COLORS.accent, S3: COLORS.yellow, S4: COLORS.teal };
+  let cumCount = 0;
+  const pts = [];
+  const bars = counts.map((c, i) => {
+    const bH = (c.count / maxC) * chartH;
+    const x = padL + i * (barW + gap);
+    cumCount += c.count;
+    const cumX = x + barW / 2;
+    const cumY = chartH - (cumCount / total) * chartH;
+    pts.push(`${cumX},${cumY}`);
+    return { c, bH, x, cumX, cumY, pct: Math.round((cumCount / total) * 100) };
+  });
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} width="100%" height={H}>
+      <line x1={padL} y1={0} x2={padL} y2={chartH} stroke={COLORS.border} strokeWidth="1" />
+      <line x1={padL} y1={chartH} x2={W} y2={chartH} stroke={COLORS.border} strokeWidth="1" />
+      {bars.map(b => (
+        <g key={b.c.label}>
+          <rect x={b.x} y={chartH - b.bH} width={barW} height={b.bH} fill={sevColors[b.c.label] || COLORS.textMuted} rx={3} opacity={0.85} />
+          <text x={b.x + barW / 2} y={chartH - b.bH - 4} textAnchor="middle" fontSize="10" fill={sevColors[b.c.label] || COLORS.textMuted} fontWeight="700">{b.c.count}</text>
+          <text x={b.x + barW / 2} y={H - 6} textAnchor="middle" fontSize="9" fill={COLORS.textMuted}>{b.c.label}</text>
+        </g>
+      ))}
+      {pts.length > 1 && <polyline points={pts.join(" ")} fill="none" stroke={COLORS.purple} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />}
+      {bars.map((b, i) => (
+        <g key={i}>
+          <circle cx={b.cumX} cy={b.cumY} r="3" fill={COLORS.purple} />
+          <text x={b.cumX} y={b.cumY - 6} textAnchor="middle" fontSize="8" fill={COLORS.purple}>{b.pct}%</text>
+        </g>
+      ))}
+    </svg>
+  );
+}
+
+function ParetoChartPhase({ defects }) {
+  const phaseCounts = D_PHASES
+    .map(p => ({ label: p.id, name: p.name, count: defects.filter(d => d.phase === p.id).length, color: p.color }))
+    .filter(p => p.count > 0)
+    .sort((a, b) => b.count - a.count);
+  if (phaseCounts.length === 0) return <div style={{ fontSize: 11, color: COLORS.textMuted, textAlign: "center", padding: "20px 0" }}>No data</div>;
+  const total = phaseCounts.reduce((s, c) => s + c.count, 0) || 1;
+  const maxC = Math.max(...phaseCounts.map(c => c.count), 1);
+  const W = 300, H = 120, padB = 28;
+  const chartH = H - padB;
+  const barW = Math.min(40, Math.floor((W - 20) / phaseCounts.length - 8));
+  const gap = Math.floor((W - 20 - phaseCounts.length * barW) / (phaseCounts.length + 1));
+  let cumCount = 0;
+  const pts = [];
+  const bars = phaseCounts.map((c, i) => {
+    const bH = (c.count / maxC) * chartH;
+    const x = gap + i * (barW + gap);
+    cumCount += c.count;
+    const cumX = x + barW / 2;
+    const cumY = chartH - (cumCount / total) * chartH;
+    pts.push(`${cumX},${cumY}`);
+    return { c, bH, x, cumX, cumY, pct: Math.round((cumCount / total) * 100) };
+  });
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} width="100%" height={H}>
+      <line x1={0} y1={chartH} x2={W} y2={chartH} stroke={COLORS.border} strokeWidth="1" />
+      {bars.map(b => (
+        <g key={b.c.label}>
+          <rect x={b.x} y={chartH - b.bH} width={barW} height={b.bH} fill={b.c.color} rx={2} opacity={0.85} />
+          <text x={b.x + barW / 2} y={chartH - b.bH - 4} textAnchor="middle" fontSize="9" fill={b.c.color} fontWeight="700">{b.c.count}</text>
+          <text x={b.x + barW / 2} y={H - 6} textAnchor="middle" fontSize="8" fill={COLORS.textMuted}>{b.c.label}</text>
+        </g>
+      ))}
+      {pts.length > 1 && <polyline points={pts.join(" ")} fill="none" stroke={COLORS.purple} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />}
+      {bars.map((b, i) => (
+        <g key={i}>
+          <circle cx={b.cumX} cy={b.cumY} r="3" fill={COLORS.purple} />
+          <text x={b.cumX} y={b.cumY - 6} textAnchor="middle" fontSize="8" fill={COLORS.purple}>{b.pct}%</text>
+        </g>
+      ))}
+    </svg>
   );
 }
 

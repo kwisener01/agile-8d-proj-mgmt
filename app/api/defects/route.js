@@ -9,7 +9,9 @@ export async function GET() {
   return NextResponse.json(
     defects.map(({ agileItems, ...d }) => ({
       ...d,
-      team: JSON.parse(d.team),
+      team: JSON.parse(d.team || "[]"),
+      isIsNot: JSON.parse(d.isIsNot || "{}"),
+      fiveW2H: JSON.parse(d.fiveW2H || "{}"),
       linkedStory: agileItems[0]?.id ?? null,
     }))
   );
@@ -25,5 +27,10 @@ export async function POST(req) {
   const defect = await prisma.defect.create({
     data: { ...rest, id, team: JSON.stringify(rest.team ?? []) },
   });
-  return NextResponse.json({ ...defect, team: JSON.parse(defect.team) }, { status: 201 });
+  return NextResponse.json({
+    ...defect,
+    team: JSON.parse(defect.team || "[]"),
+    isIsNot: JSON.parse(defect.isIsNot || "{}"),
+    fiveW2H: JSON.parse(defect.fiveW2H || "{}"),
+  }, { status: 201 });
 }

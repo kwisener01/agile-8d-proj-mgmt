@@ -5,7 +5,13 @@ import { prisma } from "../../../lib/prisma";
 export async function GET(req) {
   const { searchParams } = new URL(req.url);
   const defectId = searchParams.get("defectId");
-  if (!defectId) return NextResponse.json([]);
+
+  if (!defectId) {
+    // Return all evidence (used for eager load on startup)
+    const items = await prisma.evidence.findMany({ orderBy: { uploadedAt: "desc" } });
+    return NextResponse.json(items);
+  }
+
   const items = await prisma.evidence.findMany({ where: { defectId }, orderBy: { uploadedAt: "desc" } });
   return NextResponse.json(items);
 }
