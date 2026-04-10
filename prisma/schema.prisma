@@ -29,40 +29,40 @@ model AgileItem {
   priority       String
   tags           String
   linkedDefectId String?
-  defect         Defect? @relation(fields: [linkedDefectId], references: [id])
   sprintId       String?
   sprint         Sprint? @relation(fields: [sprintId], references: [id])
+  defect         Defect? @relation(fields: [linkedDefectId], references: [id])
 }
 
 model Defect {
-  id          String      @id
-  title       String
-  severity    String
-  phase       String
-  owner       String
-  team        String
-  created     String
-  dueDate     String
-  containment       String  @default("")
-  rootCause         String  @default("")
-  correctiveActions String  @default("")
-  implementation    String  @default("")
-  preventiveActions String  @default("")
-  recognition       String  @default("")
-  description String
-  bridged     Boolean     @default(false)
-  isIsNot     String      @default("{}")
-  fiveW2H     String      @default("{}")
-  agileItems  AgileItem[]
-  evidence    Evidence[]
+  id                String      @id
+  title             String
+  severity          String
+  phase             String
+  owner             String
+  team              String
+  created           String
+  dueDate           String
+  containment       String      @default("")
+  rootCause         String      @default("")
+  correctiveActions String      @default("")
+  implementation    String      @default("")
+  preventiveActions String      @default("")
+  recognition       String      @default("")
+  description       String
+  bridged           Boolean     @default(false)
+  isIsNot           String      @default("{}")
+  fiveW2H           String      @default("{}")
+  agileItems        AgileItem[]
+  evidence          Evidence[]
 }
 
 model Evidence {
-  id         String  @id
+  id         String @id
   defectId   String
-  defect     Defect  @relation(fields: [defectId], references: [id])
   url        String
-  caption    String  @default("")
-  phase      String  @default("")
+  caption    String @default("")
+  phase      String @default("")
   uploadedAt String
+  defect     Defect @relation(fields: [defectId], references: [id])
 }

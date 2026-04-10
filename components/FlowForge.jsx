@@ -101,10 +101,10 @@ export default function FlowForge() {
 
   useEffect(() => {
     Promise.all([
-      fetch("/api/agile").then((r) => r.json()),
-      fetch("/api/defects").then((r) => r.json()),
-      fetch("/api/sprints").then((r) => r.json()),
-      fetch("/api/evidence").then((r) => r.json()),
+      fetch("/api/agile").then((r) => r.json()).catch(() => []),
+      fetch("/api/defects").then((r) => r.json()).catch(() => []),
+      fetch("/api/sprints").then((r) => r.json()).catch(() => []),
+      fetch("/api/evidence").then((r) => r.json()).catch(() => []),
     ]).then(([agileItems, defects, sprints, allEvidence]) => {
       // Group evidence by defectId so it's immediately available
       const evidenceMap = {};
