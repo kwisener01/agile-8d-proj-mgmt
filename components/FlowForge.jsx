@@ -152,6 +152,16 @@ export default function FlowForge() {
   const [evidencePhase, setEvidencePhase] = useState("");
   const [isIsNotData, setIsIsNotData] = useState({}); // { [defectId]: { what, where, when, who, howMuch } }
   const [fiveW2HData, setFiveW2HData] = useState({}); // { [defectId]: { what, why, where, when, who, how, howMuch } }
+  const [casSuggestions, setCasSuggestions] = useState(null); // { defectId, actions, summary }
+
+  const [windowWidth, setWindowWidth] = useState(1200);
+  useEffect(() => {
+    setWindowWidth(window.innerWidth);
+    const onResize = () => setWindowWidth(window.innerWidth);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+  const isMobile = windowWidth < 768;
 
   // Initialize Is/Is Not and 5W2H from selected defect
   useEffect(() => {
@@ -343,12 +353,21 @@ export default function FlowForge() {
       const form = new FormData();
       form.append("file", file);
       const upRes = await fetch("/api/upload", { method: "POST", body: form });
+      if (!upRes.ok) {
+        const err = await upRes.json().catch(() => ({}));
+        alert(`Upload failed: ${err.error || upRes.status}`);
+        return;
+      }
       const { url } = await upRes.json();
+      if (!url) { alert("Upload failed: no URL returned from storage."); return; }
       const saveRes = await fetch("/api/evidence", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ defectId, url, caption, phase }) });
+      if (!saveRes.ok) { alert(`Failed to save evidence record: ${saveRes.status}`); return; }
       const item = await saveRes.json();
       setEvidence(e => ({ ...e, [defectId]: [item, ...(e[defectId] || [])] }));
       setEvidenceCaption("");
       setEvidencePhase("");
+    } catch (err) {
+      alert(`Upload error: ${err.message}`);
     } finally {
       setUploadingEvidence(false);
     }
@@ -802,16 +821,16 @@ ${activeSprint ? `
   return (
     <div style={{ fontFamily: "'IBM Plex Mono', monospace", background: COLORS.bg, minHeight: "100vh", color: COLORS.text, display: "flex", flexDirection: "column" }}>
       {/* TOP NAV */}
-      <div style={{ background: COLORS.surface, borderBottom: `1px solid ${COLORS.border}`, padding: "0 24px", display: "flex", alignItems: "center", height: 52, gap: 32, position: "sticky", top: 0, zIndex: 100 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+      <div style={{ background: COLORS.surface, borderBottom: `1px solid ${COLORS.border}`, padding: isMobile ? "0 12px" : "0 24px", display: "flex", alignItems: "center", height: 52, gap: isMobile ? 8 : 32, position: "sticky", top: 0, zIndex: 100 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
           <div style={{ width: 28, height: 28, background: COLORS.accent, borderRadius: 4, display: "flex", alignItems: "center", justifyContent: "center" }}>
             <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 16, color: "#fff", letterSpacing: 1 }}>FF</span>
           </div>
-          <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 22, letterSpacing: 3, color: COLORS.text }}>FLOWFORGE</span>
-          <span style={{ fontSize: 9, color: COLORS.textMuted, background: COLORS.border, padding: "2px 6px", borderRadius: 3, letterSpacing: 1 }}>BETA</span>
+          {!isMobile && <span style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 22, letterSpacing: 3, color: COLORS.text }}>FLOWFORGE</span>}
+          {!isMobile && <span style={{ fontSize: 9, color: COLORS.textMuted, background: COLORS.border, padding: "2px 6px", borderRadius: 3, letterSpacing: 1 }}>BETA</span>}
         </div>
 
-        <div style={{ display: "flex", gap: 2, marginLeft: 16 }}>
+        <div className="top-nav-tabs" style={{ display: "flex", gap: 2, marginLeft: 16 }}>
           {[
             { id: "board", label: "AGILE BOARD" },
             { id: "defects", label: "8D TRACKER" },
@@ -820,38 +839,45 @@ ${activeSprint ? `
             { id: "sprints", label: "SPRINTS" },
           ].map(n => (
             <button key={n.id} className="nav-btn" onClick={() => setView(n.id)}
-              style={{ padding: "6px 14px", borderRadius: 4, fontSize: 11, letterSpacing: 1, fontWeight: 600, fontFamily: "inherit",
+              style={{ padding: "6px 14px", borderRadius: 4, fontSize: 11, letterSpacing: 1, fontWeight: 600, fontFamily: "inherit", whiteSpace: "nowrap",
                 background: view === n.id ? COLORS.accent : "transparent",
                 color: view === n.id ? "#fff" : COLORS.textMuted,
-                borderBottom: view === n.id ? "none" : `1px solid transparent`,
               }}>
               {n.label}
             </button>
           ))}
         </div>
 
-        <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 16 }}>
+        {isMobile && (
+          <div style={{ flex: 1, textAlign: "center", fontFamily: "'Bebas Neue'", fontSize: 16, letterSpacing: 2, color: COLORS.text }}>
+            {{ board: "AGILE BOARD", defects: "8D TRACKER", bridge: "BRIDGE", pulse: "PULSE", sprints: "SPRINTS" }[view]}
+          </div>
+        )}
+
+        <div style={{ marginLeft: isMobile ? 0 : "auto", display: "flex", alignItems: "center", gap: isMobile ? 6 : 16, flexShrink: 0 }}>
           <button className="nav-btn" onClick={() => setShowSearch(true)}
-            style={{ padding: "5px 12px", fontSize: 10, background: COLORS.purpleDim, color: COLORS.purple, borderRadius: 4, fontFamily: "inherit", letterSpacing: 1 }}>
-            ⌕ AI SEARCH
+            style={{ padding: "5px 10px", fontSize: 10, background: COLORS.purpleDim, color: COLORS.purple, borderRadius: 4, fontFamily: "inherit", letterSpacing: 1, whiteSpace: "nowrap" }}>
+            {isMobile ? "⌕" : "⌕ AI SEARCH"}
           </button>
           <button className="nav-btn" onClick={printDashboard}
-            style={{ padding: "5px 12px", fontSize: 10, background: COLORS.greenDim, color: COLORS.green, borderRadius: 4, fontFamily: "inherit", letterSpacing: 1, border: `1px solid ${COLORS.green}33` }}>
-            ↓ EXPORT
+            style={{ padding: "5px 10px", fontSize: 10, background: COLORS.greenDim, color: COLORS.green, borderRadius: 4, fontFamily: "inherit", letterSpacing: 1, border: `1px solid ${COLORS.green}33`, whiteSpace: "nowrap" }}>
+            {isMobile ? "↓" : "↓ EXPORT"}
           </button>
-          {data.sprints.filter(s => s.status === "active").map(s => (
+          {!isMobile && data.sprints.filter(s => s.status === "active").map(s => (
             <div key={s.id} style={{ display: "flex", alignItems: "center", gap: 6 }}>
               <div className="pulse-dot" style={{ width: 7, height: 7, borderRadius: "50%", background: COLORS.green }} />
               <span style={{ fontSize: 10, color: COLORS.textMuted }}>{s.name} · Active</span>
             </div>
           ))}
-          <div style={{ display: "flex", gap: -4 }}>
-            {["KW", "RK", "ML"].map(a => (
-              <div key={a} style={{ width: 28, height: 28, borderRadius: "50%", background: COLORS.border, border: `2px solid ${COLORS.surface}`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 9, fontWeight: 700, color: COLORS.accent }}>
-                {a}
-              </div>
-            ))}
-          </div>
+          {!isMobile && (
+            <div style={{ display: "flex", gap: -4 }}>
+              {["KW", "RK", "ML"].map(a => (
+                <div key={a} style={{ width: 28, height: 28, borderRadius: "50%", background: COLORS.border, border: `2px solid ${COLORS.surface}`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 9, fontWeight: 700, color: COLORS.accent }}>
+                  {a}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 
@@ -859,14 +885,14 @@ ${activeSprint ? `
 
         {/* AGILE BOARD */}
         {view === "board" && (
-          <div style={{ flex: 1, padding: "20px 24px", overflow: "auto" }}>
+          <div style={{ flex: 1, padding: isMobile ? "16px 12px" : "20px 24px", overflow: "auto", paddingBottom: isMobile ? 76 : undefined }}>
             <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 20 }}>
               <div>
-                <div style={{ fontFamily: "'Bebas Neue'", fontSize: 28, letterSpacing: 2, lineHeight: 1 }}>AGILE BOARD</div>
+                <div style={{ fontFamily: "'Bebas Neue'", fontSize: isMobile ? 22 : 28, letterSpacing: 2, lineHeight: 1 }}>AGILE BOARD</div>
                 <div style={{ fontSize: 10, color: COLORS.textMuted, marginTop: 2 }}>Sprint 12 · Feb 24 — Mar 7 · {data.agileItems.filter(a => a.col === "In Sprint" || a.col === "In Progress").length} items active</div>
               </div>
               <div style={{ marginLeft: "auto", display: "flex", gap: 8, alignItems: "center" }}>
-                {data.sprints[0] && <SprintBadge sprint={data.sprints[0]} />}
+                {!isMobile && data.sprints[0] && <SprintBadge sprint={data.sprints[0]} />}
                 <button onClick={() => setShowNewCard(true)} className="nav-btn"
                   style={{ background: COLORS.teal, color: "#fff", padding: "8px 16px", borderRadius: 6, fontSize: 11, letterSpacing: 1, fontWeight: 700, fontFamily: "inherit" }}>
                   + NEW STORY
@@ -874,6 +900,7 @@ ${activeSprint ? `
               </div>
             </div>
 
+            <div style={{ overflowX: "auto", paddingBottom: 8 }}>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 12, minWidth: 900 }}>
               {AGILE_COLS.map(col => (
                 <div key={col} style={{ background: COLORS.surface, borderRadius: 8, border: `1px solid ${COLORS.border}`, overflow: "hidden" }}>
@@ -891,12 +918,13 @@ ${activeSprint ? `
                 </div>
               ))}
             </div>
+            </div>
           </div>
         )}
 
         {/* 8D TRACKER */}
         {view === "defects" && (
-          <div style={{ flex: 1, padding: "20px 24px", overflow: "auto" }}>
+          <div style={{ flex: 1, padding: isMobile ? "16px 12px" : "20px 24px", overflow: "auto", paddingBottom: isMobile ? 76 : undefined }}>
             <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 20 }}>
               <div>
                 <div style={{ fontFamily: "'Bebas Neue'", fontSize: 28, letterSpacing: 2, lineHeight: 1 }}>8D PROBLEM TRACKER</div>
@@ -924,7 +952,7 @@ ${activeSprint ? `
 
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
               {data.defects.map(d => (
-                <DefectRow key={d.id} defect={d} onClick={() => { setSelectedDefect(d); setInlineDefectFields({}); fetchEvidence(d.id); }} />
+                <DefectRow key={d.id} defect={d} isMobile={isMobile} onClick={() => { setSelectedDefect(d); setInlineDefectFields({}); fetchEvidence(d.id); }} />
               ))}
             </div>
           </div>
@@ -932,13 +960,13 @@ ${activeSprint ? `
 
         {/* BRIDGE VIEW */}
         {view === "bridge" && (
-          <div style={{ flex: 1, padding: "20px 24px", overflow: "auto" }}>
+          <div style={{ flex: 1, padding: isMobile ? "16px 12px" : "20px 24px", overflow: "auto", paddingBottom: isMobile ? 76 : undefined }}>
             <div style={{ marginBottom: 20 }}>
               <div style={{ fontFamily: "'Bebas Neue'", fontSize: 28, letterSpacing: 2, lineHeight: 1 }}>THE BRIDGE</div>
               <div style={{ fontSize: 10, color: COLORS.textMuted, marginTop: 2 }}>Connect 8D defects to Agile stories. Close the loop between quality and delivery.</div>
             </div>
 
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 80px 1fr", gap: 0, marginBottom: 24 }}>
+            <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 80px 1fr", gap: 0, marginBottom: 24 }}>
               <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.accentDim}`, borderRadius: "8px 0 0 8px", padding: "10px 16px" }}>
                 <div style={{ fontSize: 10, fontWeight: 700, color: COLORS.accent, letterSpacing: 1, marginBottom: 2 }}>8D DEFECTS</div>
                 <div style={{ fontSize: 9, color: COLORS.textMuted }}>{data.defects.length} open problems</div>
@@ -954,21 +982,21 @@ ${activeSprint ? `
 
             <div style={{ fontFamily: "'Bebas Neue'", fontSize: 14, letterSpacing: 2, color: COLORS.textMuted, marginBottom: 10 }}>ACTIVE BRIDGES</div>
             {bridgeItems.map(({ defect, story }) => (
-              <BridgeLink key={defect.id} defect={defect} story={story} />
+              <BridgeLink key={defect.id} defect={defect} story={story} isMobile={isMobile} />
             ))}
 
             <div style={{ fontFamily: "'Bebas Neue'", fontSize: 14, letterSpacing: 2, color: COLORS.textMuted, margin: "24px 0 10px" }}>UNLINKED DEFECTS — NEEDS AGILE ACTION</div>
             {unlinkedDefects.map(d => (
               <div key={d.id} style={{ background: COLORS.surface, border: `1px dashed ${COLORS.border}`, borderRadius: 8, padding: "12px 16px", marginBottom: 8 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8 }}>
                   <span style={{ fontSize: 11, color: severityColor(d.severity), fontWeight: 700 }}>{d.severity}</span>
                   <span style={{ fontSize: 11, color: COLORS.textMuted }}>{d.id}</span>
-                  <span className="card-hover" style={{ fontSize: 12, flex: 1, cursor: "pointer" }} onClick={() => { setSelectedDefect(d); setInlineDefectFields({}); fetchEvidence(d.id); }}>{d.title}</span>
-                  <button className="nav-btn" onClick={() => createStoryFromDefect(d)} style={{ fontSize: 10, background: COLORS.tealDim, color: COLORS.teal, padding: "4px 10px", borderRadius: 4, letterSpacing: 1, fontFamily: "inherit" }}>
+                  <span className="card-hover" style={{ fontSize: 12, flex: 1, minWidth: 120, cursor: "pointer" }} onClick={() => { setSelectedDefect(d); setInlineDefectFields({}); fetchEvidence(d.id); }}>{d.title}</span>
+                  <button className="nav-btn" onClick={() => createStoryFromDefect(d)} style={{ fontSize: 10, background: COLORS.tealDim, color: COLORS.teal, padding: "4px 10px", borderRadius: 4, letterSpacing: 1, fontFamily: "inherit", whiteSpace: "nowrap" }}>
                     CREATE STORY →
                   </button>
                   <button className="nav-btn" onClick={() => { setLinkingDefect(d.id); setLinkStoryPick(""); }}
-                    style={{ fontSize: 10, background: COLORS.accentDim, color: COLORS.accent, padding: "4px 10px", borderRadius: 4, letterSpacing: 1, fontFamily: "inherit" }}>
+                    style={{ fontSize: 10, background: COLORS.accentDim, color: COLORS.accent, padding: "4px 10px", borderRadius: 4, letterSpacing: 1, fontFamily: "inherit", whiteSpace: "nowrap" }}>
                     LINK EXISTING
                   </button>
                 </div>
@@ -998,13 +1026,13 @@ ${activeSprint ? `
 
         {/* PULSE / ANALYTICS */}
         {view === "pulse" && (
-          <div style={{ flex: 1, padding: "20px 24px", overflow: "auto" }}>
+          <div style={{ flex: 1, padding: isMobile ? "16px 12px" : "20px 24px", overflow: "auto", paddingBottom: isMobile ? 76 : undefined }}>
             <div style={{ marginBottom: 20 }}>
               <div style={{ fontFamily: "'Bebas Neue'", fontSize: 28, letterSpacing: 2, lineHeight: 1 }}>TEAM PULSE</div>
               <div style={{ fontSize: 10, color: COLORS.textMuted, marginTop: 2 }}>Cross-methodology health — Agile velocity + 8D resolution rate</div>
             </div>
 
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, marginBottom: 24 }}>
+            <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(4, 1fr)", gap: 12, marginBottom: 24 }}>
               {[
                 { label: "SPRINT VELOCITY", value: "34", unit: "pts", sub: "Target 40", color: COLORS.teal },
                 { label: "8D OPEN", value: "4", unit: "defects", sub: "2 S1-S2", color: COLORS.accent },
@@ -1022,7 +1050,7 @@ ${activeSprint ? `
               ))}
             </div>
 
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+            <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 16 }}>
               <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: 8, padding: 18 }}>
                 <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: 1, color: COLORS.textDim, marginBottom: 14 }}>8D PHASE DISTRIBUTION</div>
                 {D_PHASES.slice(0, 8).map(p => {
@@ -1046,7 +1074,7 @@ ${activeSprint ? `
               </div>
             </div>
 
-            <div style={{ marginTop: 16, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+            <div style={{ marginTop: 16, display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 16 }}>
               <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: 8, padding: 18 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
                   <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: 1, color: COLORS.textDim }}>PARETO — DEFECTS BY SEVERITY</div>
@@ -1065,14 +1093,14 @@ ${activeSprint ? `
 
             <div style={{ marginTop: 16, background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: 8, padding: 18 }}>
               <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: 1, color: COLORS.textDim, marginBottom: 12 }}>DEFECT RECURRENCE RADAR</div>
-              <div style={{ display: "flex", gap: 10 }}>
+              <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(4, 1fr)", gap: 10 }}>
                 {[
                   { label: "Welding Process", count: 3, trend: "↑" },
                   { label: "Sensor Calibration", count: 2, trend: "→" },
                   { label: "Torque Spec", count: 2, trend: "↓" },
                   { label: "Lubricant System", count: 1, trend: "↑" },
                 ].map(r => (
-                  <div key={r.label} style={{ flex: 1, background: COLORS.card, borderRadius: 6, padding: "10px 12px", border: `1px solid ${COLORS.border}` }}>
+                  <div key={r.label} style={{ background: COLORS.card, borderRadius: 6, padding: "10px 12px", border: `1px solid ${COLORS.border}` }}>
                     <div style={{ fontSize: 10, color: COLORS.textDim, marginBottom: 4 }}>{r.label}</div>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                       <span style={{ fontFamily: "'Bebas Neue'", fontSize: 24, color: r.count >= 3 ? COLORS.red : r.count === 2 ? COLORS.accent : COLORS.green }}>{r.count}x</span>
@@ -1086,7 +1114,7 @@ ${activeSprint ? `
         )}
         {/* SPRINTS */}
         {view === "sprints" && (
-          <div style={{ flex: 1, padding: "20px 24px", overflow: "auto" }}>
+          <div style={{ flex: 1, padding: isMobile ? "16px 12px" : "20px 24px", overflow: "auto", paddingBottom: isMobile ? 76 : undefined }}>
             <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 24 }}>
               <div>
                 <div style={{ fontFamily: "'Bebas Neue'", fontSize: 28, letterSpacing: 2, lineHeight: 1 }}>SPRINT MANAGEMENT</div>
@@ -1107,7 +1135,7 @@ ${activeSprint ? `
                   <div key={sprint.id} style={{ background: COLORS.surface, border: `1px solid ${sprint.status === "active" ? COLORS.green + "44" : COLORS.border}`, borderRadius: 10, padding: "18px 20px" }}>
                     {isEditing ? (
                       <div>
-                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 12, marginBottom: 14 }}>
+                        <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "1fr 1fr 1fr 1fr", gap: 12, marginBottom: 14 }}>
                           {[
                             { label: "NAME", key: "name", type: "text" },
                             { label: "START", key: "start", type: "text", placeholder: "Mar 10" },
@@ -1151,22 +1179,24 @@ ${activeSprint ? `
                       const colColor = { "In Sprint": COLORS.teal, "In Progress": COLORS.accent, "Review": COLORS.yellow, "Done": COLORS.green, "Backlog": COLORS.textMuted };
                       return (
                         <>
-                          <div style={{ display: "flex", alignItems: "center", gap: 20 }}>
-                            <div style={{ minWidth: 60 }}>
-                              <div style={{ fontSize: 9, color: COLORS.textMuted, letterSpacing: 1 }}>{sprint.id}</div>
-                              <div style={{ fontSize: 8, marginTop: 2, padding: "2px 6px", borderRadius: 3, background: statusColor + "22", color: statusColor, display: "inline-block", letterSpacing: 1, textTransform: "uppercase" }}>{sprint.status}</div>
+                          <div style={{ display: "flex", flexDirection: isMobile ? "column" : "row", alignItems: isMobile ? "stretch" : "center", gap: isMobile ? 10 : 20 }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                              <div style={{ minWidth: 60 }}>
+                                <div style={{ fontSize: 9, color: COLORS.textMuted, letterSpacing: 1 }}>{sprint.id}</div>
+                                <div style={{ fontSize: 8, marginTop: 2, padding: "2px 6px", borderRadius: 3, background: statusColor + "22", color: statusColor, display: "inline-block", letterSpacing: 1, textTransform: "uppercase" }}>{sprint.status}</div>
+                              </div>
+                              <div style={{ flex: 1, cursor: "pointer" }} onClick={() => setExpandedSprint(isExpanded ? null : sprint.id)}>
+                                <div style={{ fontFamily: "'Bebas Neue'", fontSize: 20, letterSpacing: 2 }}>{sprint.name}</div>
+                                <div style={{ fontSize: 10, color: COLORS.textMuted, marginTop: 1 }}>{sprint.start} → {sprint.end} · <span style={{ color: COLORS.teal }}>{sprintItems.length} stories</span></div>
+                              </div>
                             </div>
-                            <div style={{ flex: 1, cursor: "pointer" }} onClick={() => setExpandedSprint(isExpanded ? null : sprint.id)}>
-                              <div style={{ fontFamily: "'Bebas Neue'", fontSize: 20, letterSpacing: 2 }}>{sprint.name}</div>
-                              <div style={{ fontSize: 10, color: COLORS.textMuted, marginTop: 1 }}>{sprint.start} → {sprint.end} · <span style={{ color: COLORS.teal }}>{sprintItems.length} stories</span></div>
-                            </div>
-                            <div style={{ minWidth: 140 }}>
+                            <div style={{ flex: isMobile ? undefined : 1 }}>
                               <div style={{ fontSize: 9, color: COLORS.textMuted, marginBottom: 5 }}>VELOCITY {sprint.velocity} / {sprint.target} pts ({pct}%)</div>
                               <div style={{ width: "100%", height: 5, background: COLORS.border, borderRadius: 3 }}>
                                 <div style={{ width: `${Math.min(pct, 100)}%`, height: "100%", background: pct >= 80 ? COLORS.green : COLORS.teal, borderRadius: 3 }} />
                               </div>
                             </div>
-                            <div style={{ display: "flex", gap: 6 }}>
+                            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                               {sprint.status === "planned" && (
                                 <button className="nav-btn" onClick={() => setSprintActive(sprint.id)}
                                   style={{ padding: "5px 12px", fontSize: 9, background: COLORS.greenDim, color: COLORS.green, borderRadius: 4, fontFamily: "inherit", letterSpacing: 1 }}>SET ACTIVE</button>
@@ -1197,7 +1227,8 @@ ${activeSprint ? `
                               {sprintItems.length === 0 ? (
                                 <div style={{ fontSize: 11, color: COLORS.textMuted, textAlign: "center", padding: "12px 0" }}>No stories assigned to this sprint.</div>
                               ) : (
-                                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11 }}>
+                                <div style={{ overflowX: "auto" }}>
+                                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11, minWidth: 500 }}>
                                   <thead>
                                     <tr style={{ color: COLORS.textMuted, fontSize: 9, letterSpacing: 1 }}>
                                       <th style={{ textAlign: "left", padding: "4px 8px", fontWeight: 600 }}>TYPE</th>
@@ -1239,6 +1270,7 @@ ${activeSprint ? `
                                     ))}
                                   </tbody>
                                 </table>
+                                </div>
                               )}
                               <div style={{ marginTop: 12, display: "flex", alignItems: "center", gap: 8 }}>
                                 {addingToSprint === sprint.id ? (
@@ -1277,9 +1309,27 @@ ${activeSprint ? `
 
       </div>
 
+      {/* BOTTOM NAV (mobile only) */}
+      <div className="bottom-nav">
+        {[
+          { id: "board", label: "BOARD", icon: "▦" },
+          { id: "defects", label: "8D", icon: "⬡" },
+          { id: "bridge", label: "BRIDGE", icon: "⇄" },
+          { id: "pulse", label: "PULSE", icon: "◉" },
+          { id: "sprints", label: "SPRINT", icon: "⚡" },
+        ].map(n => (
+          <button key={n.id} className={`bottom-nav-btn${view === n.id ? " active" : ""}`}
+            onClick={() => setView(n.id)}
+            style={{ color: view === n.id ? COLORS.accent : COLORS.textMuted }}>
+            <span className="icon">{n.icon}</span>
+            <span className="label">{n.label}</span>
+          </button>
+        ))}
+      </div>
+
       {/* DEFECT DETAIL PANEL */}
       {selectedDefect && (
-        <div style={{ position: "fixed", top: 0, right: 0, width: 480, height: "100vh", background: COLORS.surface, borderLeft: `1px solid ${COLORS.border}`, zIndex: 200, overflow: "auto", padding: 24 }} className="slide-in">
+        <div style={{ position: "fixed", top: 0, right: 0, width: isMobile ? "100vw" : 480, height: "100vh", background: COLORS.surface, borderLeft: `1px solid ${COLORS.border}`, zIndex: 200, overflow: "auto", padding: isMobile ? 16 : 24, paddingBottom: isMobile ? 76 : 24 }} className="slide-in">
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 20 }}>
             <div>
               <div style={{ fontSize: 9, color: COLORS.accent, letterSpacing: 1, marginBottom: 4 }}>8D DEFECT REPORT</div>
@@ -1408,24 +1458,28 @@ ${activeSprint ? `
                       D2 — IS / IS NOT ANALYSIS
                     </div>
                     <div style={{ padding: "10px 14px" }}>
-                      <div style={{ display: "grid", gridTemplateColumns: "60px 1fr 1fr", gap: 6, marginBottom: 6 }}>
-                        <div style={{ fontSize: 8, color: COLORS.textMuted, letterSpacing: 1 }}>DIM</div>
-                        <div style={{ fontSize: 8, color: COLORS.green, letterSpacing: 1, fontWeight: 700 }}>IS</div>
-                        <div style={{ fontSize: 8, color: COLORS.red, letterSpacing: 1, fontWeight: 700 }}>IS NOT</div>
-                      </div>
+                      {!isMobile && (
+                        <div style={{ display: "grid", gridTemplateColumns: "60px 1fr 1fr", gap: 6, marginBottom: 6 }}>
+                          <div style={{ fontSize: 8, color: COLORS.textMuted, letterSpacing: 1 }}>DIM</div>
+                          <div style={{ fontSize: 8, color: COLORS.green, letterSpacing: 1, fontWeight: 700 }}>IS</div>
+                          <div style={{ fontSize: 8, color: COLORS.red, letterSpacing: 1, fontWeight: 700 }}>IS NOT</div>
+                        </div>
+                      )}
                       {dims.map(({ key, label }) => (
-                        <div key={key} style={{ display: "grid", gridTemplateColumns: "60px 1fr 1fr", gap: 6, marginBottom: 6, alignItems: "start" }}>
-                          <div style={{ fontSize: 9, color: COLORS.yellow, paddingTop: 6, fontWeight: 600 }}>{label}</div>
-                          <textarea rows={2} value={iin[key]?.is || ""}
-                            onChange={e => setIsIsNotData(prev => ({ ...prev, [iid]: { ...iin, [key]: { ...iin[key], is: e.target.value } } }))}
-                            onBlur={e => saveIsIsNot(iid, { ...iin, [key]: { ...iin[key], is: e.target.value } })}
-                            placeholder={`What IS the ${label.toLowerCase()}…`}
-                            style={{ background: COLORS.surface, border: `1px solid ${COLORS.green}44`, borderRadius: 4, padding: "4px 6px", color: COLORS.text, fontSize: 10, fontFamily: "inherit", resize: "vertical", outline: "none" }} />
-                          <textarea rows={2} value={iin[key]?.isNot || ""}
-                            onChange={e => setIsIsNotData(prev => ({ ...prev, [iid]: { ...iin, [key]: { ...iin[key], isNot: e.target.value } } }))}
-                            onBlur={e => saveIsIsNot(iid, { ...iin, [key]: { ...iin[key], isNot: e.target.value } })}
-                            placeholder={`What is NOT the ${label.toLowerCase()}…`}
-                            style={{ background: COLORS.surface, border: `1px solid ${COLORS.red}44`, borderRadius: 4, padding: "4px 6px", color: COLORS.text, fontSize: 10, fontFamily: "inherit", resize: "vertical", outline: "none" }} />
+                        <div key={key} style={{ marginBottom: isMobile ? 10 : 6 }}>
+                          <div style={{ fontSize: 9, color: COLORS.yellow, marginBottom: 4, fontWeight: 600 }}>{label}</div>
+                          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "1fr 1fr", gap: 4 }}>
+                            <textarea rows={2} value={iin[key]?.is || ""}
+                              onChange={e => setIsIsNotData(prev => ({ ...prev, [iid]: { ...iin, [key]: { ...iin[key], is: e.target.value } } }))}
+                              onBlur={e => saveIsIsNot(iid, { ...iin, [key]: { ...iin[key], is: e.target.value } })}
+                              placeholder={`IS…`}
+                              style={{ background: COLORS.surface, border: `1px solid ${COLORS.green}44`, borderRadius: 4, padding: "4px 6px", color: COLORS.text, fontSize: 10, fontFamily: "inherit", resize: "vertical", outline: "none" }} />
+                            <textarea rows={2} value={iin[key]?.isNot || ""}
+                              onChange={e => setIsIsNotData(prev => ({ ...prev, [iid]: { ...iin, [key]: { ...iin[key], isNot: e.target.value } } }))}
+                              onBlur={e => saveIsIsNot(iid, { ...iin, [key]: { ...iin[key], isNot: e.target.value } })}
+                              placeholder={`IS NOT…`}
+                              style={{ background: COLORS.surface, border: `1px solid ${COLORS.red}44`, borderRadius: 4, padding: "4px 6px", color: COLORS.text, fontSize: 10, fontFamily: "inherit", resize: "vertical", outline: "none" }} />
+                          </div>
                         </div>
                       ))}
                     </div>
@@ -1481,9 +1535,27 @@ ${activeSprint ? `
                   <div key={f.key} style={{ marginBottom: 14 }}>
                     <div style={{ fontSize: 9, letterSpacing: 1, color: f.color, marginBottom: 5, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                       <span>{f.label}</span>
-                      {inlineDefectFields[fieldKey] !== undefined && inlineDefectFields[fieldKey] !== (selectedDefect[f.key] ?? "") && (
-                        <span style={{ fontSize: 8, color: COLORS.textMuted }}>unsaved</span>
-                      )}
+                      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                        {inlineDefectFields[fieldKey] !== undefined && inlineDefectFields[fieldKey] !== (selectedDefect[f.key] ?? "") && (
+                          <span style={{ fontSize: 8, color: COLORS.textMuted }}>unsaved</span>
+                        )}
+                        {f.key === "correctiveActions" && (
+                          <button className="nav-btn" disabled={aiLoading}
+                            onClick={async () => {
+                              if (casSuggestions?.defectId === selectedDefect.id) { setCasSuggestions(null); return; }
+                              const result = await callAI("correctiveActions", {
+                                title: selectedDefect.title,
+                                description: selectedDefect.description,
+                                rootCause: selectedDefect.rootCause,
+                                containment: selectedDefect.containment,
+                              });
+                              if (result?.actions) setCasSuggestions({ defectId: selectedDefect.id, actions: result.actions, summary: result.summary });
+                            }}
+                            style={{ padding: "2px 8px", background: casSuggestions?.defectId === selectedDefect.id ? COLORS.accent : COLORS.accentDim, color: "#fff", borderRadius: 3, fontSize: 8, fontWeight: 700, letterSpacing: 1, fontFamily: "inherit", opacity: aiLoading ? 0.5 : 1 }}>
+                            {aiLoading ? "..." : casSuggestions?.defectId === selectedDefect.id ? "✕ HIDE" : "✦ SUGGEST"}
+                          </button>
+                        )}
+                      </div>
                     </div>
                     <textarea
                       rows={3}
@@ -1499,6 +1571,33 @@ ${activeSprint ? `
                       }}
                       style={{ width: "100%", background: COLORS.card, border: `1px solid ${COLORS.border}`, borderRadius: 4, padding: "7px 10px", color: COLORS.text, fontSize: 12, fontFamily: "inherit", resize: "vertical", outline: "none" }}
                     />
+                    {f.key === "correctiveActions" && casSuggestions?.defectId === selectedDefect.id && (
+                      <div style={{ marginTop: 8, background: COLORS.accentDim, border: `1px solid ${COLORS.accent}44`, borderRadius: 6, padding: "10px 12px" }}>
+                        <div style={{ fontSize: 9, color: COLORS.accent, letterSpacing: 1, fontWeight: 700, marginBottom: 6 }}>✦ AI SUGGESTED CORRECTIVE ACTIONS</div>
+                        {casSuggestions.summary && (
+                          <div style={{ fontSize: 10, color: COLORS.textDim, lineHeight: 1.5, marginBottom: 8, fontStyle: "italic" }}>{casSuggestions.summary}</div>
+                        )}
+                        {casSuggestions.actions.map((action, i) => (
+                          <div key={i} style={{ display: "flex", gap: 8, alignItems: "flex-start", marginBottom: 6 }}>
+                            <span style={{ fontSize: 10, color: COLORS.accent, fontWeight: 700, flexShrink: 0, marginTop: 1 }}>{i + 1}.</span>
+                            <span style={{ fontSize: 11, color: COLORS.text, flex: 1, lineHeight: 1.5 }}>{action}</span>
+                            <button className="nav-btn" onClick={() => {
+                              const existing = inlineDefectFields[fieldKey] ?? selectedDefect.correctiveActions ?? "";
+                              const newVal = existing ? `${existing}\n${i + 1}. ${action}` : `${i + 1}. ${action}`;
+                              setInlineDefectFields(s => ({ ...s, [fieldKey]: newVal }));
+                            }} style={{ padding: "2px 6px", background: COLORS.card, color: COLORS.teal, borderRadius: 3, fontSize: 8, fontWeight: 700, letterSpacing: 1, fontFamily: "inherit", flexShrink: 0, border: `1px solid ${COLORS.teal}44` }}>
+                              + ADD
+                            </button>
+                          </div>
+                        ))}
+                        <button className="nav-btn" onClick={() => {
+                          const allActions = casSuggestions.actions.map((a, i) => `${i + 1}. ${a}`).join("\n");
+                          setInlineDefectFields(s => ({ ...s, [fieldKey]: allActions }));
+                        }} style={{ marginTop: 4, padding: "4px 12px", background: COLORS.accent, color: "#fff", borderRadius: 4, fontSize: 9, fontWeight: 700, letterSpacing: 1, fontFamily: "inherit" }}>
+                          APPLY ALL →
+                        </button>
+                      </div>
+                    )}
                   </div>
                 );
               })}
@@ -1684,7 +1783,7 @@ ${activeSprint ? `
                   {(evidence[selectedDefect.id] || []).length === 0 ? (
                     <div style={{ fontSize: 10, color: COLORS.textMuted, textAlign: "center", padding: "16px 0" }}>No evidence attached yet. Upload photos, PDFs, or screenshots.</div>
                   ) : (
-                    <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8 }}>
+                    <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(3, 1fr)", gap: 8 }}>
                       {(evidence[selectedDefect.id] || []).map(item => (
                         <div key={item.id} style={{ position: "relative", borderRadius: 6, overflow: "hidden", border: `1px solid ${COLORS.border}`, background: COLORS.surface }}>
                           {item.url.match(/\.(jpg|jpeg|png|gif|webp)$/i) ? (
@@ -2148,7 +2247,7 @@ ${activeSprint ? `
 
       {/* AGILE CARD DETAIL */}
       {selectedCard && (
-        <div style={{ position: "fixed", top: 0, right: 0, width: 380, height: "100vh", background: COLORS.surface, borderLeft: `1px solid ${COLORS.border}`, zIndex: 200, padding: 24, overflow: "auto" }} className="slide-in">
+        <div style={{ position: "fixed", top: 0, right: 0, width: isMobile ? "100vw" : 380, height: "100vh", background: COLORS.surface, borderLeft: `1px solid ${COLORS.border}`, zIndex: 200, padding: isMobile ? 16 : 24, paddingBottom: isMobile ? 76 : 24, overflow: "auto" }} className="slide-in">
           <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 20 }}>
             <div>
               <div style={{ fontSize: 9, color: COLORS.teal, letterSpacing: 1, marginBottom: 4 }}>AGILE CARD</div>
@@ -2347,8 +2446,33 @@ function AgileCard({ item, onClick }) {
   );
 }
 
-function DefectRow({ defect, onClick }) {
+function DefectRow({ defect, onClick, isMobile }) {
   const phase = D_PHASES.find(p => p.id === defect.phase);
+  if (isMobile) {
+    return (
+      <div className="card-hover" onClick={onClick}
+        style={{ background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: 8, padding: "12px 14px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
+          <span style={{ fontSize: 12, fontWeight: 700, color: severityColor(defect.severity), minWidth: 24 }}>{defect.severity}</span>
+          <span style={{ fontSize: 9, color: COLORS.textMuted }}>{defect.id}</span>
+          <span style={{ fontSize: 9, color: phase?.color, fontWeight: 700 }}>{phase?.label}</span>
+          <div style={{ marginLeft: "auto", display: "flex", gap: 2 }}>
+            {D_PHASES.map((p, i) => (
+              <div key={p.id} style={{ width: 4, height: 10, borderRadius: 1, background: phaseIndex(defect.phase) >= i ? p.color : COLORS.border }} />
+            ))}
+          </div>
+        </div>
+        <div style={{ fontSize: 13, color: COLORS.text, lineHeight: 1.35, marginBottom: 5 }}>{defect.title}</div>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <span style={{ fontSize: 9, color: COLORS.textMuted }}>Owner: {defect.owner}</span>
+          <span style={{ fontSize: 9, color: COLORS.textMuted }}>Due: {defect.dueDate}</span>
+          {defect.linkedStory && (
+            <span style={{ marginLeft: "auto", fontSize: 9, background: COLORS.tealDim, color: COLORS.teal, padding: "2px 7px", borderRadius: 3 }}>LINKED</span>
+          )}
+        </div>
+      </div>
+    );
+  }
   return (
     <div className="card-hover" onClick={onClick}
       style={{ background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: 8, padding: "14px 18px", display: "flex", alignItems: "center", gap: 14 }}>
@@ -2382,9 +2506,31 @@ function phaseIndex(pid) {
   return D_PHASES.findIndex(d => d.id === pid);
 }
 
-function BridgeLink({ defect, story }) {
+function BridgeLink({ defect, story, isMobile }) {
   if (!story) return null;
   const phase = D_PHASES.find(p => p.id === defect.phase);
+  if (isMobile) {
+    return (
+      <div style={{ marginBottom: 10, borderRadius: 8, overflow: "hidden", border: `1px solid ${COLORS.border}` }}>
+        <div style={{ background: COLORS.card, borderBottom: `1px solid ${COLORS.accentDim}`, padding: "10px 14px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 3 }}>
+            <span style={{ fontSize: 9, color: COLORS.accent, letterSpacing: 1 }}>{defect.id} · {defect.severity}</span>
+            <span style={{ fontSize: 9, color: phase?.color }}>{phase?.label}</span>
+          </div>
+          <div style={{ fontSize: 12, color: COLORS.text }}>{defect.title}</div>
+        </div>
+        <div style={{ background: COLORS.accentDim, padding: "4px 14px", display: "flex", alignItems: "center", gap: 6 }}>
+          <span style={{ fontSize: 10, color: COLORS.accent }}>⇄</span>
+          <span style={{ fontSize: 8, color: COLORS.accent, letterSpacing: 1 }}>LINKED TO STORY</span>
+        </div>
+        <div style={{ background: COLORS.card, padding: "10px 14px" }}>
+          <div style={{ fontSize: 9, color: COLORS.teal, letterSpacing: 1, marginBottom: 3 }}>{story.id} · {story.type}</div>
+          <div style={{ fontSize: 12, color: COLORS.text }}>{story.title}</div>
+          <div style={{ marginTop: 4, fontSize: 9, color: COLORS.textMuted }}>{story.col} · {story.points} pts</div>
+        </div>
+      </div>
+    );
+  }
   return (
     <div style={{ display: "grid", gridTemplateColumns: "1fr 40px 1fr", gap: 0, marginBottom: 10, alignItems: "stretch" }}>
       <div style={{ background: COLORS.card, border: `1px solid ${COLORS.accentDim}`, borderRadius: "8px 0 0 8px", padding: "12px 14px" }}>

@@ -125,6 +125,19 @@ Build a Fault Tree Analysis starting from the top undesired event, decomposing i
 
 Return ONLY valid JSON with no markdown, no explanation, no code blocks:
 {"topEvent":"The top undesired event","tree":{"label":"Top event description","gate":"OR","children":[{"label":"Intermediate cause A","gate":"AND","children":[{"label":"Basic failure cause 1","type":"basic"},{"label":"Basic failure cause 2","type":"basic"}]},{"label":"Basic failure cause 3","type":"basic"}]},"criticalPath":"The most critical failure chain from root to top event","rootCause":"Primary root cause identified by the fault tree"}`;
+  } else if (action === "correctiveActions") {
+    const { title, description, rootCause, containment } = payload;
+    prompt = `You are an expert in 8D problem-solving and corrective action planning.
+
+Problem: ${title}
+Description: ${description}
+Root Cause: ${rootCause || "Not yet determined"}
+Containment taken: ${containment || "None"}
+
+Suggest 4-6 specific, actionable D5 corrective actions that permanently eliminate the identified root cause. Each action should be SMART — specific enough to assign to a person with a clear outcome. Focus on systemic fixes, not just symptomatic fixes.
+
+Return ONLY valid JSON with no markdown, no explanation, no code blocks:
+{"actions":["Action 1 description","Action 2 description","Action 3 description","Action 4 description"],"summary":"One-sentence rationale for this corrective action plan"}`;
   } else {
     return NextResponse.json({ error: "Unknown action" }, { status: 400 });
   }
