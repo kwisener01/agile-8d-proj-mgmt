@@ -841,6 +841,269 @@ ${activeSprint ? `
     win.document.close();
   };
 
+  const generatePDF = (defect) => {
+    const esc = (s) => (s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    const ev = evidence[defect.id] || [];
+    const story = data.agileItems.find(a => a.id === defect.linkedStory);
+    const f5 = defect.fiveW2H || {};
+    const iin = defect.isIsNot || {};
+    const phaseObj = D_PHASES.find(p => p.id === defect.phase);
+    const phasePct = Math.round((phaseIndex(defect.phase) / 8) * 100);
+    const teamArr = Array.isArray(defect.team) ? defect.team : [defect.team];
+    const has5W2H = Object.values(f5).some(v => v);
+    const hasIsIsNot = Object.values(iin).some(v => v?.is || v?.isNot);
+    const sevColors = { S1: "#EF4444", S2: "#F97316", S3: "#EAB308", S4: "#14B8A6" };
+    const sevColor = sevColors[defect.severity] || "#94A3B8";
+
+    const html = `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>8D Report — ${esc(defect.id)}: ${esc(defect.title)}</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Segoe UI', Arial, sans-serif; color: #1e293b; background: #fff; font-size: 10.5pt; }
+  .cover { background: #0D0F14; color: #fff; padding: 48px 56px 40px; }
+  .cover-eyebrow { font-size: 7.5pt; letter-spacing: 4px; color: #F97316; margin-bottom: 10px; text-transform: uppercase; }
+  .cover-id { font-size: 40pt; font-weight: 800; letter-spacing: 6px; color: #fff; line-height: 1; margin-bottom: 6px; }
+  .cover-title { font-size: 15pt; color: #94A3B8; margin-bottom: 30px; line-height: 1.4; }
+  .cover-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; margin-bottom: 28px; }
+  .meta-item { }
+  .meta-label { font-size: 7pt; letter-spacing: 2px; color: #475569; text-transform: uppercase; display: block; margin-bottom: 3px; }
+  .meta-value { font-size: 11pt; font-weight: 600; color: #E2E8F0; }
+  .sev-badge { display: inline-block; padding: 2px 10px; border-radius: 4px; font-weight: 800; font-size: 11pt; }
+  .progress-section { margin-top: 4px; }
+  .progress-label { font-size: 7pt; color: #475569; letter-spacing: 2px; text-transform: uppercase; margin-bottom: 6px; }
+  .progress-track { height: 6px; background: #1e293b; border-radius: 3px; overflow: hidden; margin-bottom: 6px; }
+  .progress-fill { height: 100%; border-radius: 3px; }
+  .phase-dots { display: flex; gap: 4px; }
+  .phase-dot { flex: 1; text-align: center; font-size: 6pt; color: #475569; }
+  .body { padding: 36px 56px; }
+  .section { margin-bottom: 26px; }
+  .section-head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; padding-bottom: 7px; }
+  .phase-tag { font-size: 7.5pt; font-weight: 800; padding: 2px 8px; border-radius: 3px; letter-spacing: 1.5px; white-space: nowrap; }
+  .section-name { font-size: 12.5pt; font-weight: 700; }
+  .section-rule { flex: 1; height: 1.5px; }
+  .content { font-size: 10.5pt; line-height: 1.75; color: #334155; white-space: pre-wrap; }
+  .empty { color: #94A3B8; font-style: italic; }
+  table { width: 100%; border-collapse: collapse; margin-top: 6px; }
+  th { padding: 7px 10px; font-size: 8.5pt; font-weight: 700; letter-spacing: 1px; text-align: left; border: 1px solid #e2e8f0; background: #f8fafc; }
+  td { padding: 7px 10px; border: 1px solid #e2e8f0; font-size: 10pt; vertical-align: top; }
+  .dim-col { width: 90px; font-weight: 700; font-size: 9pt; color: #64748B; background: #f8fafc; }
+  .is-col { color: #15803d; font-weight: 700; }
+  .isnot-col { color: #dc2626; font-weight: 700; }
+  .story-card { background: #fff7ed; border: 1.5px solid #fed7aa; border-radius: 6px; padding: 12px 16px; margin-top: 6px; }
+  .story-id { font-size: 8pt; color: #ea580c; letter-spacing: 2px; font-weight: 700; margin-bottom: 4px; }
+  .story-title { font-size: 11pt; font-weight: 700; color: #1e293b; margin-bottom: 4px; }
+  .story-meta { font-size: 9pt; color: #64748B; }
+  .ev-list { list-style: none; margin-top: 6px; }
+  .ev-item { padding: 6px 0; border-bottom: 1px solid #f1f5f9; font-size: 10pt; display: flex; align-items: center; gap: 8px; }
+  .ev-item:last-child { border-bottom: none; }
+  .ev-phase { font-size: 7pt; background: #f1f5f9; color: #64748B; padding: 1px 6px; border-radius: 3px; }
+  .ev-date { font-size: 8.5pt; color: #94a3b8; margin-left: auto; }
+  .footer { margin-top: 48px; padding-top: 14px; border-top: 1.5px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center; }
+  .footer-brand { font-size: 7.5pt; color: #94A3B8; letter-spacing: 3px; text-transform: uppercase; }
+  .footer-date { font-size: 7.5pt; color: #94A3B8; }
+  @media print {
+    body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .section { break-inside: avoid; }
+    @page { margin: 0; size: letter; }
+  }
+</style>
+</head>
+<body>
+
+<div class="cover">
+  <div class="cover-eyebrow">8D Problem Solving Report · FlowForge</div>
+  <div class="cover-id">${esc(defect.id)}</div>
+  <div class="cover-title">${esc(defect.title)}</div>
+  <div class="cover-grid">
+    <div class="meta-item">
+      <span class="meta-label">Severity</span>
+      <span class="sev-badge" style="background:${sevColor}22;color:${sevColor}">${esc(defect.severity)}</span>
+    </div>
+    <div class="meta-item">
+      <span class="meta-label">Current Phase</span>
+      <span class="meta-value">${esc(phaseObj?.label || defect.phase)} — ${esc(phaseObj?.name || "")}</span>
+    </div>
+    <div class="meta-item">
+      <span class="meta-label">Completion</span>
+      <span class="meta-value">${phasePct}%</span>
+    </div>
+    <div class="meta-item">
+      <span class="meta-label">Status</span>
+      <span class="meta-value" style="color:${defect.bridged ? "#14B8A6" : "#94A3B8"}">${defect.bridged ? "LINKED" : "STANDALONE"}</span>
+    </div>
+    <div class="meta-item">
+      <span class="meta-label">Owner</span>
+      <span class="meta-value">${esc(defect.owner)}</span>
+    </div>
+    <div class="meta-item">
+      <span class="meta-label">Team</span>
+      <span class="meta-value">${esc(teamArr.join(", "))}</span>
+    </div>
+    <div class="meta-item">
+      <span class="meta-label">Created</span>
+      <span class="meta-value">${esc(defect.created)}</span>
+    </div>
+    <div class="meta-item">
+      <span class="meta-label">Due Date</span>
+      <span class="meta-value">${esc(defect.dueDate)}</span>
+    </div>
+  </div>
+  <div class="progress-section">
+    <div class="progress-label">Phase Progress</div>
+    <div class="progress-track"><div class="progress-fill" style="width:${phasePct}%;background:linear-gradient(90deg,#F97316,#8B5CF6,#14B8A6)"></div></div>
+    <div class="phase-dots">${D_PHASES.map((p, i) => `<div class="phase-dot" style="color:${i <= phaseIndex(defect.phase) ? p.color : "#475569"};font-weight:${i <= phaseIndex(defect.phase) ? 700 : 400}">${p.label}</div>`).join("")}</div>
+  </div>
+</div>
+
+<div class="body">
+
+  <div class="section">
+    <div class="section-head">
+      <span class="phase-tag" style="background:#F9731622;color:#F97316">D1</span>
+      <span class="section-name" style="color:#F97316">Team Formation</span>
+      <div class="section-rule" style="background:#F9731622"></div>
+    </div>
+    <table>
+      <tr><td class="dim-col">OWNER</td><td>${esc(defect.owner)}</td></tr>
+      <tr><td class="dim-col">TEAM</td><td>${esc(teamArr.join(", "))}</td></tr>
+      <tr><td class="dim-col">OPENED</td><td>${esc(defect.created)}</td></tr>
+      <tr><td class="dim-col">TARGET</td><td>${esc(defect.dueDate)}</td></tr>
+    </table>
+  </div>
+
+  <div class="section">
+    <div class="section-head">
+      <span class="phase-tag" style="background:#EAB30822;color:#EAB308">D2</span>
+      <span class="section-name" style="color:#EAB308">Problem Description — 5W2H</span>
+      <div class="section-rule" style="background:#EAB30822"></div>
+    </div>
+    ${has5W2H ? `<table>${[["WHAT", f5.what], ["WHO", f5.who], ["WHERE", f5.where], ["WHEN", f5.when], ["WHY", f5.why], ["HOW", f5.how], ["HOW MUCH", f5.howMuch]].filter(([, v]) => v).map(([k, v]) => `<tr><td class="dim-col">${k}</td><td>${esc(v)}</td></tr>`).join("")}</table>`
+    : `<div class="content">${esc(defect.description) || '<span class="empty">Not yet completed</span>'}</div>`}
+  </div>
+
+  ${hasIsIsNot ? `<div class="section">
+    <div class="section-head">
+      <span class="phase-tag" style="background:#EAB30822;color:#EAB308">D2</span>
+      <span class="section-name" style="color:#EAB308">Is / Is Not Analysis</span>
+      <div class="section-rule" style="background:#EAB30822"></div>
+    </div>
+    <table>
+      <tr><th class="dim-col">DIMENSION</th><th class="is-col">IS</th><th class="isnot-col">IS NOT</th></tr>
+      ${[["what","WHAT"],["where","WHERE"],["when","WHEN"],["who","WHO"],["howMuch","HOW MUCH"]].filter(([k]) => iin[k]?.is || iin[k]?.isNot).map(([k, l]) => `<tr><td class="dim-col">${l}</td><td>${esc(iin[k]?.is)}</td><td>${esc(iin[k]?.isNot)}</td></tr>`).join("")}
+    </table>
+  </div>` : ""}
+
+  <div class="section">
+    <div class="section-head">
+      <span class="phase-tag" style="background:#22C55E22;color:#22C55E">D3</span>
+      <span class="section-name" style="color:#22C55E">Containment Actions</span>
+      <div class="section-rule" style="background:#22C55E22"></div>
+    </div>
+    <div class="content">${esc(defect.containment) || '<span class="empty">Not yet completed</span>'}</div>
+  </div>
+
+  <div class="section">
+    <div class="section-head">
+      <span class="phase-tag" style="background:#8B5CF622;color:#8B5CF6">D4</span>
+      <span class="section-name" style="color:#8B5CF6">Root Cause Analysis</span>
+      <div class="section-rule" style="background:#8B5CF622"></div>
+    </div>
+    <div class="content">${esc(defect.rootCause) || '<span class="empty">Not yet completed</span>'}</div>
+  </div>
+
+  <div class="section">
+    <div class="section-head">
+      <span class="phase-tag" style="background:#F9731622;color:#F97316">D5</span>
+      <span class="section-name" style="color:#F97316">Corrective Actions</span>
+      <div class="section-rule" style="background:#F9731622"></div>
+    </div>
+    <div class="content">${esc(defect.correctiveActions) || '<span class="empty">Not yet completed</span>'}</div>
+  </div>
+
+  <div class="section">
+    <div class="section-head">
+      <span class="phase-tag" style="background:#EAB30822;color:#EAB308">D6</span>
+      <span class="section-name" style="color:#EAB308">Implementation &amp; Validation</span>
+      <div class="section-rule" style="background:#EAB30822"></div>
+    </div>
+    <div class="content">${esc(defect.implementation) || '<span class="empty">Not yet completed</span>'}</div>
+  </div>
+
+  <div class="section">
+    <div class="section-head">
+      <span class="phase-tag" style="background:#22C55E22;color:#22C55E">D7</span>
+      <span class="section-name" style="color:#22C55E">Preventive Actions</span>
+      <div class="section-rule" style="background:#22C55E22"></div>
+    </div>
+    <div class="content">${esc(defect.preventiveActions) || '<span class="empty">Not yet completed</span>'}</div>
+  </div>
+
+  <div class="section">
+    <div class="section-head">
+      <span class="phase-tag" style="background:#14B8A622;color:#14B8A6">D8</span>
+      <span class="section-name" style="color:#14B8A6">Team Recognition</span>
+      <div class="section-rule" style="background:#14B8A622"></div>
+    </div>
+    <div class="content">${esc(defect.recognition) || '<span class="empty">Not yet completed</span>'}</div>
+  </div>
+
+  ${story ? `<div class="section">
+    <div class="section-head">
+      <span class="phase-tag" style="background:#0ea5e922;color:#0ea5e9">LINK</span>
+      <span class="section-name" style="color:#0ea5e9">Linked Agile Story</span>
+      <div class="section-rule" style="background:#0ea5e922"></div>
+    </div>
+    <div class="story-card">
+      <div class="story-id">${esc(story.id)} · ${esc(story.type)}</div>
+      <div class="story-title">${esc(story.title)}</div>
+      <div class="story-meta">${esc(story.points)} pts · ${esc(story.priority)} priority · ${esc(story.col)} · Assignee: ${esc(story.assignee)}</div>
+    </div>
+  </div>` : ""}
+
+  ${ev.length > 0 ? `<div class="section">
+    <div class="section-head">
+      <span class="phase-tag" style="background:#64748b22;color:#64748b">EVD</span>
+      <span class="section-name" style="color:#64748b">Evidence &amp; Attachments (${ev.length})</span>
+      <div class="section-rule" style="background:#e2e8f0"></div>
+    </div>
+    <ul class="ev-list">${ev.map(e => `<li class="ev-item"><span>${esc(e.caption || e.url.split("/").pop())}</span>${e.phase ? `<span class="ev-phase">${esc(e.phase)}</span>` : ""}<span class="ev-date">${(e.uploadedAt || "").split("T")[0]}</span></li>`).join("")}</ul>
+  </div>` : ""}
+
+  <div class="footer">
+    <span class="footer-brand">FlowForge · 8D Problem Solving System</span>
+    <span class="footer-date">Generated ${new Date().toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" })}</span>
+  </div>
+</div>
+
+<script>window.onload = function() { setTimeout(function() { window.print(); }, 400); }</script>
+</body>
+</html>`;
+
+    const win = window.open("", "_blank");
+    if (win) { win.document.write(html); win.document.close(); }
+  };
+
+  const exportToExcel = () => {
+    const csvEsc = (s) => `"${(s || "").toString().replace(/"/g, '""').replace(/\n/g, " ")}"`;
+    const headers = ["ID","Title","Severity","Phase","Owner","Team","Created","Due Date","Bridged","Linked Story","Containment","Root Cause","Corrective Actions","Implementation","Preventive Actions","Recognition","5W2H - What","5W2H - Who","5W2H - Where","5W2H - When","5W2H - Why","5W2H - How","5W2H - How Much","Description"];
+    const rows = data.defects.map(d => {
+      const f = d.fiveW2H || {};
+      const team = Array.isArray(d.team) ? d.team.join("; ") : (d.team || "");
+      return [d.id, d.title, d.severity, d.phase, d.owner, team, d.created, d.dueDate, d.bridged ? "Yes" : "No", d.linkedStory || "", d.containment, d.rootCause, d.correctiveActions, d.implementation, d.preventiveActions, d.recognition, f.what, f.who, f.where, f.when, f.why, f.how, f.howMuch, d.description].map(csvEsc).join(",");
+    });
+    const csv = [headers.map(h => `"${h}"`).join(","), ...rows].join("\r\n");
+    const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `FlowForge_8D_${new Date().toISOString().split("T")[0]}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   if (loading) {
     return (
       <div style={{ fontFamily: "'IBM Plex Mono', monospace", background: COLORS.bg, minHeight: "100vh", color: COLORS.textMuted, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, letterSpacing: 2 }}>
@@ -961,10 +1224,16 @@ ${activeSprint ? `
                 <div style={{ fontFamily: "'Bebas Neue'", fontSize: 28, letterSpacing: 2, lineHeight: 1 }}>8D PROBLEM TRACKER</div>
                 <div style={{ fontSize: 10, color: COLORS.textMuted, marginTop: 2 }}>{data.defects.length} open defects · {data.defects.filter(d => d.phase === "D8").length} closed</div>
               </div>
-              <button onClick={() => setShowNewDefect(true)} className="nav-btn"
-                style={{ marginLeft: "auto", background: COLORS.accent, color: "#fff", padding: "8px 16px", borderRadius: 6, fontSize: 11, letterSpacing: 1, fontWeight: 700, fontFamily: "inherit" }}>
-                + NEW 8D
-              </button>
+              <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
+                <button onClick={exportToExcel} className="nav-btn"
+                  style={{ background: COLORS.greenDim, color: COLORS.green, padding: "8px 14px", borderRadius: 6, fontSize: 11, letterSpacing: 1, fontWeight: 700, fontFamily: "inherit", border: `1px solid ${COLORS.green}33` }}>
+                  ↓ EXCEL
+                </button>
+                <button onClick={() => setShowNewDefect(true)} className="nav-btn"
+                  style={{ background: COLORS.accent, color: "#fff", padding: "8px 16px", borderRadius: 6, fontSize: 11, letterSpacing: 1, fontWeight: 700, fontFamily: "inherit" }}>
+                  + NEW 8D
+                </button>
+              </div>
             </div>
 
             {/* Phase Progress Strip */}
@@ -1063,23 +1332,35 @@ ${activeSprint ? `
               <div style={{ fontSize: 10, color: COLORS.textMuted, marginTop: 2 }}>Cross-methodology health — Agile velocity + 8D resolution rate</div>
             </div>
 
-            <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(4, 1fr)", gap: 12, marginBottom: 24 }}>
-              {[
-                { label: "SPRINT VELOCITY", value: "34", unit: "pts", sub: "Target 40", color: COLORS.teal },
-                { label: "8D OPEN", value: "4", unit: "defects", sub: "2 S1-S2", color: COLORS.accent },
-                { label: "BRIDGE RATE", value: "75%", unit: "", sub: "3 of 4 linked", color: COLORS.purple },
-                { label: "CLOSURE TIME", value: "18", unit: "days avg", sub: "8D resolution", color: COLORS.green },
-              ].map(m => (
-                <div key={m.label} style={{ background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: 8, padding: "16px 18px" }}>
-                  <div style={{ fontSize: 9, color: COLORS.textMuted, letterSpacing: 1, marginBottom: 8 }}>{m.label}</div>
-                  <div style={{ display: "flex", alignItems: "baseline", gap: 4 }}>
-                    <span style={{ fontFamily: "'Bebas Neue'", fontSize: 36, color: m.color, lineHeight: 1 }}>{m.value}</span>
-                    <span style={{ fontSize: 11, color: COLORS.textMuted }}>{m.unit}</span>
-                  </div>
-                  <div style={{ fontSize: 9, color: COLORS.textMuted, marginTop: 6 }}>{m.sub}</div>
+            {(() => {
+              const activeSprint = data.sprints.find(s => s.status === "active");
+              const openDefects = data.defects.filter(d => d.phase !== "D8");
+              const closedDefects = data.defects.filter(d => d.phase === "D8");
+              const bridgedCount = data.defects.filter(d => d.bridged).length;
+              const bridgePct = data.defects.length > 0 ? Math.round(bridgedCount / data.defects.length * 100) : 0;
+              const highSev = openDefects.filter(d => d.severity === "S1" || d.severity === "S2").length;
+              const avgDays = closedDefects.length > 0 ? Math.round(closedDefects.reduce((sum, d) => { const ms = new Date(d.dueDate) - new Date(d.created); return sum + Math.max(0, ms / 86400000); }, 0) / closedDefects.length) : null;
+              const metrics = [
+                { label: "SPRINT VELOCITY", value: activeSprint ? activeSprint.velocity : "—", unit: activeSprint ? "pts" : "", sub: activeSprint ? `Target: ${activeSprint.target} pts` : "No active sprint", color: COLORS.teal },
+                { label: "8D OPEN", value: openDefects.length, unit: "defects", sub: `${highSev} critical/high severity`, color: openDefects.length > 0 ? COLORS.accent : COLORS.green },
+                { label: "BRIDGE RATE", value: `${bridgePct}%`, unit: "", sub: `${bridgedCount} of ${data.defects.length} linked`, color: COLORS.purple },
+                { label: "AVG RESOLUTION", value: avgDays !== null ? avgDays : "N/A", unit: avgDays !== null ? "days" : "", sub: closedDefects.length > 0 ? `${closedDefects.length} closed 8Ds` : "No closed 8Ds yet", color: COLORS.green },
+              ];
+              return (
+                <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(4, 1fr)", gap: 12, marginBottom: 24 }}>
+                  {metrics.map(m => (
+                    <div key={m.label} style={{ background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: 8, padding: "16px 18px" }}>
+                      <div style={{ fontSize: 9, color: COLORS.textMuted, letterSpacing: 1, marginBottom: 8 }}>{m.label}</div>
+                      <div style={{ display: "flex", alignItems: "baseline", gap: 4 }}>
+                        <span style={{ fontFamily: "'Bebas Neue'", fontSize: 36, color: m.color, lineHeight: 1 }}>{m.value}</span>
+                        <span style={{ fontSize: 11, color: COLORS.textMuted }}>{m.unit}</span>
+                      </div>
+                      <div style={{ fontSize: 9, color: COLORS.textMuted, marginTop: 6 }}>{m.sub}</div>
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
+              );
+            })()}
 
             <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 16 }}>
               <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: 8, padding: 18 }}>
@@ -1100,8 +1381,27 @@ ${activeSprint ? `
               </div>
 
               <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: 8, padding: 18 }}>
-                <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: 1, color: COLORS.textDim, marginBottom: 14 }}>SPRINT BURNDOWN SIMULATION</div>
-                <BurndownChart />
+                <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: 1, color: COLORS.textDim, marginBottom: 14 }}>SPRINT VELOCITY HISTORY</div>
+                {data.sprints.length === 0 ? (
+                  <div style={{ fontSize: 11, color: COLORS.textMuted, fontStyle: "italic", paddingTop: 20 }}>No sprints recorded yet.</div>
+                ) : data.sprints.map(sprint => {
+                  const pct = sprint.target > 0 ? Math.min(100, Math.round(sprint.velocity / sprint.target * 100)) : 0;
+                  const barColor = sprint.status === "active" ? COLORS.green : sprint.status === "completed" ? COLORS.teal : COLORS.border;
+                  return (
+                    <div key={sprint.id} style={{ marginBottom: 12 }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4, alignItems: "center" }}>
+                        <span style={{ fontSize: 10, color: COLORS.textDim }}>{sprint.name}</span>
+                        <span style={{ fontSize: 9, color: sprint.status === "active" ? COLORS.green : COLORS.textMuted, letterSpacing: 1 }}>
+                          {sprint.velocity}/{sprint.target} pts {sprint.status === "active" ? "· ACTIVE" : ""}
+                        </span>
+                      </div>
+                      <div style={{ height: 8, background: COLORS.card, borderRadius: 4, overflow: "hidden" }}>
+                        <div style={{ width: `${pct}%`, height: "100%", background: barColor, borderRadius: 4, transition: "width 0.5s ease" }} />
+                      </div>
+                      <div style={{ fontSize: 8, color: COLORS.textMuted, marginTop: 2 }}>{sprint.start} → {sprint.end} · {pct}% of target</div>
+                    </div>
+                  );
+                })}
               </div>
             </div>
 
@@ -1122,25 +1422,34 @@ ${activeSprint ? `
               </div>
             </div>
 
-            <div style={{ marginTop: 16, background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: 8, padding: 18 }}>
-              <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: 1, color: COLORS.textDim, marginBottom: 12 }}>DEFECT RECURRENCE RADAR</div>
-              <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(4, 1fr)", gap: 10 }}>
-                {[
-                  { label: "Welding Process", count: 3, trend: "↑" },
-                  { label: "Sensor Calibration", count: 2, trend: "→" },
-                  { label: "Torque Spec", count: 2, trend: "↓" },
-                  { label: "Lubricant System", count: 1, trend: "↑" },
-                ].map(r => (
-                  <div key={r.label} style={{ background: COLORS.card, borderRadius: 6, padding: "10px 12px", border: `1px solid ${COLORS.border}` }}>
-                    <div style={{ fontSize: 10, color: COLORS.textDim, marginBottom: 4 }}>{r.label}</div>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                      <span style={{ fontFamily: "'Bebas Neue'", fontSize: 24, color: r.count >= 3 ? COLORS.red : r.count === 2 ? COLORS.accent : COLORS.green }}>{r.count}x</span>
-                      <span style={{ fontSize: 14, color: r.trend === "↑" ? COLORS.red : r.trend === "↓" ? COLORS.green : COLORS.yellow }}>{r.trend}</span>
-                    </div>
+            {(() => {
+              const today = new Date();
+              const open = data.defects.filter(d => d.phase !== "D8");
+              const pastDue = open.filter(d => d.dueDate && new Date(d.dueDate) < today).length;
+              const noRootCause = open.filter(d => !d.rootCause).length;
+              const noContainment = open.filter(d => !d.containment).length;
+              const s1s2 = open.filter(d => d.severity === "S1" || d.severity === "S2").length;
+              const signals = [
+                { label: "Past Due Date", count: pastDue, bad: pastDue > 0, color: pastDue > 0 ? COLORS.red : COLORS.green, msg: pastDue > 0 ? "OVERDUE" : "ON TRACK" },
+                { label: "No Root Cause (D4)", count: noRootCause, bad: noRootCause > 0, color: noRootCause > 0 ? COLORS.accent : COLORS.green, msg: noRootCause > 0 ? "NEEDS RCA" : "ALL DONE" },
+                { label: "No Containment (D3)", count: noContainment, bad: noContainment > 0, color: noContainment > 0 ? COLORS.yellow : COLORS.green, msg: noContainment > 0 ? "UNCONTAINED" : "ALL CONTAINED" },
+                { label: "Critical / High Sev", count: s1s2, bad: s1s2 > 0, color: s1s2 > 0 ? COLORS.red : COLORS.green, msg: s1s2 > 0 ? "HIGH PRIORITY" : "LOW SEV ONLY" },
+              ];
+              return (
+                <div style={{ marginTop: 16, background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: 8, padding: 18 }}>
+                  <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: 1, color: COLORS.textDim, marginBottom: 12 }}>QUALITY RISK SIGNALS</div>
+                  <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(4, 1fr)", gap: 10 }}>
+                    {signals.map(r => (
+                      <div key={r.label} style={{ background: COLORS.card, borderRadius: 6, padding: "12px 14px", border: `1px solid ${r.bad ? r.color + "44" : COLORS.border}` }}>
+                        <div style={{ fontSize: 9, color: COLORS.textDim, marginBottom: 6, lineHeight: 1.3 }}>{r.label}</div>
+                        <div style={{ fontFamily: "'Bebas Neue'", fontSize: 32, color: r.color, lineHeight: 1 }}>{r.count}</div>
+                        <div style={{ fontSize: 8, color: r.color, letterSpacing: 1, marginTop: 4, fontWeight: 700 }}>{r.msg}</div>
+                      </div>
+                    ))}
                   </div>
-                ))}
-              </div>
-            </div>
+                </div>
+              );
+            })()}
           </div>
         )}
         {/* SPRINTS */}
@@ -1367,13 +1676,10 @@ ${activeSprint ? `
               <div style={{ fontFamily: "'Bebas Neue'", fontSize: 22, letterSpacing: 2 }}>{selectedDefect.id}</div>
             </div>
             <div style={{ display: "flex", gap: 6 }}>
-              <button className="nav-btn" disabled={aiLoading}
-                onClick={async () => {
-                  const result = await callAI("generate8dReport", { defect: selectedDefect });
-                  if (result && result.report) setAiReport({ defectId: selectedDefect.id, text: result.report });
-                }}
-                style={{ background: COLORS.purpleDim, color: COLORS.purple, padding: "4px 10px", borderRadius: 4, fontSize: 10, fontFamily: "inherit", letterSpacing: 1, opacity: aiLoading ? 0.5 : 1 }}>
-                {aiLoading ? "..." : "✦ REPORT"}
+              <button className="nav-btn"
+                onClick={() => generatePDF(selectedDefect)}
+                style={{ background: COLORS.purpleDim, color: COLORS.purple, padding: "4px 10px", borderRadius: 4, fontSize: 10, fontFamily: "inherit", letterSpacing: 1 }}>
+                ✦ PDF REPORT
               </button>
               <button className="nav-btn" onClick={() => { const iin = selectedDefect.isIsNot || {}; setDefectEditForm({ ...selectedDefect, team: selectedDefect.team.join(", "), fiveW2H: { what: "", who: "", where: "", when: "", why: "", how: "", howMuch: "", ...(selectedDefect.fiveW2H || {}) } }); setEditIsIsNotOpen(Object.values(iin).some(v => v.is || v.isNot)); setEditingDefect(true); }}
                 style={{ background: COLORS.accentDim, color: COLORS.accent, padding: "4px 10px", borderRadius: 4, fontSize: 10, fontFamily: "inherit", letterSpacing: 1 }}>EDIT</button>
