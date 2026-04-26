@@ -138,6 +138,55 @@ Suggest 4-6 specific, actionable D5 corrective actions that permanently eliminat
 
 Return ONLY valid JSON with no markdown, no explanation, no code blocks:
 {"actions":["Action 1 description","Action 2 description","Action 3 description","Action 4 description"],"summary":"One-sentence rationale for this corrective action plan"}`;
+  } else if (action === "aiContainment") {
+    const { title, description, severity } = payload;
+    prompt = `You are an expert in 8D problem-solving and immediate containment planning.
+
+Problem: ${title}
+Severity: ${severity || "Unknown"}
+Description: ${description}
+
+Generate specific D3 containment actions to prevent this defect from reaching customers or spreading. Think: quarantine/hold, 100% inspection, customer notification, interim process controls. Be specific and immediately actionable.
+
+Return ONLY valid JSON with no markdown, no explanation, no code blocks:
+{"containment":"1. [Quarantine step]\\n2. [Inspection action]\\n3. [Notification/communication step]\\n4. [Interim process control]","rationale":"Why these containment steps are appropriate for this problem and severity"}`;
+  } else if (action === "aiImplementation") {
+    const { title, rootCause, correctiveActions, containment } = payload;
+    prompt = `You are an expert in 8D implementation and validation planning.
+
+Problem: ${title}
+Root Cause: ${rootCause || "Not yet determined"}
+Corrective Actions: ${correctiveActions || "Not yet defined"}
+Containment in place: ${containment || "None"}
+
+Generate a D6 implementation and validation plan with: who is responsible, what evidence is needed, how to verify the fix works, and what KPIs to monitor over what timeframe.
+
+Return ONLY valid JSON with no markdown, no explanation, no code blocks:
+{"implementation":"Structured D6 implementation plan with numbered steps, owners, and timelines","kpis":["Measurable KPI 1","Measurable KPI 2","Measurable KPI 3"]}`;
+  } else if (action === "aiPreventive") {
+    const { title, rootCause, correctiveActions } = payload;
+    prompt = `You are an expert in systemic quality improvement and D7 preventive action planning.
+
+Problem: ${title}
+Root Cause: ${rootCause || "Not yet determined"}
+Corrective Actions Applied: ${correctiveActions || "Not yet defined"}
+
+Generate D7 systemic preventive actions targeting the root cause to prevent recurrence across similar products, processes, or locations. Focus on: mistake-proofing (poka-yoke), standards/procedure updates, horizontal deployment, training, and process control improvements.
+
+Return ONLY valid JSON with no markdown, no explanation, no code blocks:
+{"preventiveActions":"Numbered list of systemic preventive actions","systemicChanges":["Systemic change 1","Systemic change 2","Systemic change 3"]}`;
+  } else if (action === "aiRecognition") {
+    const { title, team, owner } = payload;
+    prompt = `You are writing a D8 team recognition statement for a resolved 8D quality problem.
+
+Problem Resolved: ${title}
+Team: ${Array.isArray(team) ? team.join(", ") : (team || owner || "The team")}
+Owner: ${owner || "Unknown"}
+
+Write a genuine, professional recognition statement (2-4 sentences) acknowledging the team's effort: what they accomplished, why it matters for quality and the customer, and sincere appreciation.
+
+Return ONLY valid JSON with no markdown, no explanation, no code blocks:
+{"recognition":"Team recognition statement"}`;
   } else {
     return NextResponse.json({ error: "Unknown action" }, { status: 400 });
   }

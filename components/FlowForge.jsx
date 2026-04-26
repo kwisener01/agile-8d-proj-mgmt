@@ -156,6 +156,7 @@ export default function FlowForge() {
   const [isIsNotData, setIsIsNotData] = useState({}); // { [defectId]: { what, where, when, who, howMuch } }
   const [fiveW2HData, setFiveW2HData] = useState({}); // { [defectId]: { what, why, where, when, who, how, howMuch } }
   const [casSuggestions, setCasSuggestions] = useState(null); // { defectId, actions, summary }
+  const [aiPhaseSuggest, setAiPhaseSuggest] = useState(null); // { key, text, actions, summary }
 
   const [windowWidth, setWindowWidth] = useState(1200);
   useEffect(() => {
@@ -435,6 +436,7 @@ export default function FlowForge() {
     setData(d => ({ ...d, defects: d.defects.map(def => def.id === updated.id ? updated : def) }));
     setSelectedDefect(updated);
     setEditingDefect(false);
+    setAiPhaseSuggest(null);
   };
 
   const saveInlineDefectField = async (defectId, key, value) => {
@@ -1420,79 +1422,54 @@ ${activeSprint ? `
                 </div>
               </div>
 
-              {/* D2 — IS / IS NOT */}
+              {/* D2 — IS / IS NOT (read-only) */}
               {(() => {
-                const iid = selectedDefect.id;
-                const iin = isIsNotData[iid] || { what: { is: "", isNot: "" }, where: { is: "", isNot: "" }, when: { is: "", isNot: "" }, who: { is: "", isNot: "" }, howMuch: { is: "", isNot: "" } };
-                const dims = [
-                  { key: "what", label: "WHAT" },
-                  { key: "where", label: "WHERE" },
-                  { key: "when", label: "WHEN" },
-                  { key: "who", label: "WHO" },
-                  { key: "howMuch", label: "HOW MUCH" },
-                ];
+                const iin = selectedDefect.isIsNot || {};
+                const hasData = Object.values(iin).some(v => v?.is || v?.isNot);
+                if (!hasData) return null;
+                const dims = [{ key: "what", label: "WHAT" }, { key: "where", label: "WHERE" }, { key: "when", label: "WHEN" }, { key: "who", label: "WHO" }, { key: "howMuch", label: "HOW MUCH" }];
                 return (
                   <div style={{ marginBottom: 16, background: COLORS.card, border: `1px solid ${COLORS.yellow}44`, borderRadius: 8, overflow: "hidden" }}>
-                    <div style={{ padding: "8px 14px", borderBottom: `1px solid ${COLORS.border}`, fontSize: 9, color: COLORS.yellow, letterSpacing: 1, fontWeight: 700 }}>
-                      D2 — IS / IS NOT ANALYSIS
-                    </div>
+                    <div style={{ padding: "8px 14px", borderBottom: `1px solid ${COLORS.border}`, fontSize: 9, color: COLORS.yellow, letterSpacing: 1, fontWeight: 700 }}>D2 — IS / IS NOT ANALYSIS</div>
                     <div style={{ padding: "10px 14px" }}>
-                      {!isMobile && (
-                        <div style={{ display: "grid", gridTemplateColumns: "60px 1fr 1fr", gap: 6, marginBottom: 6 }}>
-                          <div style={{ fontSize: 8, color: COLORS.textMuted, letterSpacing: 1 }}>DIM</div>
-                          <div style={{ fontSize: 8, color: COLORS.green, letterSpacing: 1, fontWeight: 700 }}>IS</div>
-                          <div style={{ fontSize: 8, color: COLORS.red, letterSpacing: 1, fontWeight: 700 }}>IS NOT</div>
-                        </div>
-                      )}
-                      {dims.map(({ key, label }) => (
-                        <div key={key} style={{ marginBottom: isMobile ? 10 : 6 }}>
-                          <div style={{ fontSize: 9, color: COLORS.yellow, marginBottom: 4, fontWeight: 600 }}>{label}</div>
-                          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "1fr 1fr", gap: 4 }}>
-                            <textarea rows={2} value={iin[key]?.is || ""}
-                              onChange={e => setIsIsNotData(prev => ({ ...prev, [iid]: { ...iin, [key]: { ...iin[key], is: e.target.value } } }))}
-                              onBlur={e => saveIsIsNot(iid, { ...iin, [key]: { ...iin[key], is: e.target.value } })}
-                              placeholder={`IS…`}
-                              style={{ background: COLORS.surface, border: `1px solid ${COLORS.green}44`, borderRadius: 4, padding: "4px 6px", color: COLORS.text, fontSize: 10, fontFamily: "inherit", resize: "vertical", outline: "none" }} />
-                            <textarea rows={2} value={iin[key]?.isNot || ""}
-                              onChange={e => setIsIsNotData(prev => ({ ...prev, [iid]: { ...iin, [key]: { ...iin[key], isNot: e.target.value } } }))}
-                              onBlur={e => saveIsIsNot(iid, { ...iin, [key]: { ...iin[key], isNot: e.target.value } })}
-                              placeholder={`IS NOT…`}
-                              style={{ background: COLORS.surface, border: `1px solid ${COLORS.red}44`, borderRadius: 4, padding: "4px 6px", color: COLORS.text, fontSize: 10, fontFamily: "inherit", resize: "vertical", outline: "none" }} />
+                      <div style={{ display: "grid", gridTemplateColumns: "60px 1fr 1fr", gap: 6, marginBottom: 6 }}>
+                        <div style={{ fontSize: 8, color: COLORS.textMuted, letterSpacing: 1 }}>DIM</div>
+                        <div style={{ fontSize: 8, color: COLORS.green, letterSpacing: 1, fontWeight: 700 }}>IS</div>
+                        <div style={{ fontSize: 8, color: COLORS.red, letterSpacing: 1, fontWeight: 700 }}>IS NOT</div>
+                      </div>
+                      {dims.map(({ key, label }) => {
+                        const row = iin[key] || {};
+                        if (!row.is && !row.isNot) return null;
+                        return (
+                          <div key={key} style={{ display: "grid", gridTemplateColumns: "60px 1fr 1fr", gap: 6, marginBottom: 8 }}>
+                            <div style={{ fontSize: 9, color: COLORS.yellow, fontWeight: 600 }}>{label}</div>
+                            <div style={{ fontSize: 10, color: row.is ? COLORS.text : COLORS.textMuted, lineHeight: 1.5 }}>{row.is || "—"}</div>
+                            <div style={{ fontSize: 10, color: row.isNot ? COLORS.text : COLORS.textMuted, lineHeight: 1.5 }}>{row.isNot || "—"}</div>
                           </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   </div>
                 );
               })()}
 
-              {/* D2 — 5W2H */}
+              {/* D2 — 5W2H (read-only) */}
               {(() => {
-                const iid = selectedDefect.id;
-                const f5 = fiveW2HData[iid] || { what: "", why: "", where: "", when: "", who: "", how: "", howMuch: "" };
+                const f5 = selectedDefect.fiveW2H || {};
+                const hasData = Object.values(f5).some(v => v);
+                if (!hasData) return null;
                 const questions = [
-                  { key: "what",    label: "WHAT",     placeholder: "What is the problem?" },
-                  { key: "why",     label: "WHY",      placeholder: "Why is it important to solve?" },
-                  { key: "where",   label: "WHERE",    placeholder: "Where did it occur?" },
-                  { key: "when",    label: "WHEN",     placeholder: "When did it occur?" },
-                  { key: "who",     label: "WHO",      placeholder: "Who is affected?" },
-                  { key: "how",     label: "HOW",      placeholder: "How did it happen?" },
-                  { key: "howMuch", label: "HOW MUCH", placeholder: "What is the magnitude/cost?" },
+                  { key: "what", label: "WHAT" }, { key: "why", label: "WHY" }, { key: "where", label: "WHERE" },
+                  { key: "when", label: "WHEN" }, { key: "who", label: "WHO" }, { key: "how", label: "HOW" }, { key: "howMuch", label: "HOW MUCH" },
                 ];
                 return (
                   <div style={{ marginBottom: 16, background: COLORS.card, border: `1px solid ${COLORS.teal}44`, borderRadius: 8, overflow: "hidden" }}>
-                    <div style={{ padding: "8px 14px", borderBottom: `1px solid ${COLORS.border}`, fontSize: 9, color: COLORS.teal, letterSpacing: 1, fontWeight: 700 }}>
-                      D2 — 5W2H PROBLEM DEFINITION
-                    </div>
+                    <div style={{ padding: "8px 14px", borderBottom: `1px solid ${COLORS.border}`, fontSize: 9, color: COLORS.teal, letterSpacing: 1, fontWeight: 700 }}>D2 — 5W2H PROBLEM DEFINITION</div>
                     <div style={{ padding: "10px 14px" }}>
-                      {questions.map(({ key, label, placeholder }) => (
+                      {questions.filter(q => f5[q.key]).map(({ key, label }) => (
                         <div key={key} style={{ display: "grid", gridTemplateColumns: "60px 1fr", gap: 8, marginBottom: 8, alignItems: "start" }}>
-                          <div style={{ fontSize: 9, color: COLORS.teal, paddingTop: 6, fontWeight: 700 }}>{label}</div>
-                          <textarea rows={2} value={f5[key] || ""}
-                            onChange={e => setFiveW2HData(prev => ({ ...prev, [iid]: { ...f5, [key]: e.target.value } }))}
-                            onBlur={e => saveFiveW2H(iid, { ...f5, [key]: e.target.value })}
-                            placeholder={placeholder}
-                            style={{ background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: 4, padding: "4px 6px", color: COLORS.text, fontSize: 10, fontFamily: "inherit", resize: "vertical", outline: "none" }} />
+                          <div style={{ fontSize: 9, color: COLORS.teal, paddingTop: 2, fontWeight: 700 }}>{label}</div>
+                          <div style={{ fontSize: 11, color: COLORS.text, lineHeight: 1.5 }}>{f5[key]}</div>
                         </div>
                       ))}
                     </div>
@@ -1501,234 +1478,20 @@ ${activeSprint ? `
               })()}
 
               {[
-                { label: "D3 — CONTAINMENT", key: "containment", color: COLORS.teal },
+                { label: "D3 — CONTAINMENT", key: "containment", color: COLORS.green },
                 { label: "D4 — ROOT CAUSE", key: "rootCause", color: COLORS.purple },
                 { label: "D5 — CORRECTIVE ACTIONS", key: "correctiveActions", color: COLORS.accent },
                 { label: "D6 — IMPLEMENTATION & VALIDATION", key: "implementation", color: COLORS.yellow },
                 { label: "D7 — PREVENT RECURRENCE", key: "preventiveActions", color: COLORS.green },
-                { label: "D8 — TEAM RECOGNITION", key: "recognition", color: COLORS.textDim },
-              ].map(f => {
-                const fieldKey = `${selectedDefect.id}_${f.key}`;
-                const localVal = inlineDefectFields[fieldKey] ?? selectedDefect[f.key] ?? "";
-                return (
-                  <div key={f.key} style={{ marginBottom: 14 }}>
-                    <div style={{ fontSize: 9, letterSpacing: 1, color: f.color, marginBottom: 5, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                      <span>{f.label}</span>
-                      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                        {inlineDefectFields[fieldKey] !== undefined && inlineDefectFields[fieldKey] !== (selectedDefect[f.key] ?? "") && (
-                          <span style={{ fontSize: 8, color: COLORS.textMuted }}>unsaved</span>
-                        )}
-                        {f.key === "correctiveActions" && (
-                          <button className="nav-btn" disabled={aiLoading}
-                            onClick={async () => {
-                              if (casSuggestions?.defectId === selectedDefect.id) { setCasSuggestions(null); return; }
-                              const result = await callAI("correctiveActions", {
-                                title: selectedDefect.title,
-                                description: selectedDefect.description,
-                                rootCause: selectedDefect.rootCause,
-                                containment: selectedDefect.containment,
-                              });
-                              if (result?.actions) setCasSuggestions({ defectId: selectedDefect.id, actions: result.actions, summary: result.summary });
-                            }}
-                            style={{ padding: "2px 8px", background: casSuggestions?.defectId === selectedDefect.id ? COLORS.accent : COLORS.accentDim, color: "#fff", borderRadius: 3, fontSize: 8, fontWeight: 700, letterSpacing: 1, fontFamily: "inherit", opacity: aiLoading ? 0.5 : 1 }}>
-                            {aiLoading ? "..." : casSuggestions?.defectId === selectedDefect.id ? "✕ HIDE" : "✦ SUGGEST"}
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                    <textarea
-                      rows={3}
-                      value={localVal}
-                      placeholder={`Enter ${f.label.toLowerCase()}…`}
-                      onChange={e => setInlineDefectFields(s => ({ ...s, [fieldKey]: e.target.value }))}
-                      onBlur={e => {
-                        const val = e.target.value;
-                        if (val !== (selectedDefect[f.key] ?? "")) {
-                          saveInlineDefectField(selectedDefect.id, f.key, val);
-                          setInlineDefectFields(s => { const n = { ...s }; delete n[fieldKey]; return n; });
-                        }
-                      }}
-                      style={{ width: "100%", background: COLORS.card, border: `1px solid ${COLORS.border}`, borderRadius: 4, padding: "7px 10px", color: COLORS.text, fontSize: 12, fontFamily: "inherit", resize: "vertical", outline: "none" }}
-                    />
-                    {f.key === "correctiveActions" && casSuggestions?.defectId === selectedDefect.id && (
-                      <div style={{ marginTop: 8, background: COLORS.accentDim, border: `1px solid ${COLORS.accent}44`, borderRadius: 6, padding: "10px 12px" }}>
-                        <div style={{ fontSize: 9, color: COLORS.accent, letterSpacing: 1, fontWeight: 700, marginBottom: 6 }}>✦ AI SUGGESTED CORRECTIVE ACTIONS</div>
-                        {casSuggestions.summary && (
-                          <div style={{ fontSize: 10, color: COLORS.textDim, lineHeight: 1.5, marginBottom: 8, fontStyle: "italic" }}>{casSuggestions.summary}</div>
-                        )}
-                        {casSuggestions.actions.map((action, i) => (
-                          <div key={i} style={{ display: "flex", gap: 8, alignItems: "flex-start", marginBottom: 6 }}>
-                            <span style={{ fontSize: 10, color: COLORS.accent, fontWeight: 700, flexShrink: 0, marginTop: 1 }}>{i + 1}.</span>
-                            <span style={{ fontSize: 11, color: COLORS.text, flex: 1, lineHeight: 1.5 }}>{action}</span>
-                            <button className="nav-btn" onClick={() => {
-                              const existing = inlineDefectFields[fieldKey] ?? selectedDefect.correctiveActions ?? "";
-                              const newVal = existing ? `${existing}\n${i + 1}. ${action}` : `${i + 1}. ${action}`;
-                              setInlineDefectFields(s => ({ ...s, [fieldKey]: newVal }));
-                            }} style={{ padding: "2px 6px", background: COLORS.card, color: COLORS.teal, borderRadius: 3, fontSize: 8, fontWeight: 700, letterSpacing: 1, fontFamily: "inherit", flexShrink: 0, border: `1px solid ${COLORS.teal}44` }}>
-                              + ADD
-                            </button>
-                          </div>
-                        ))}
-                        <button className="nav-btn" onClick={() => {
-                          const allActions = casSuggestions.actions.map((a, i) => `${i + 1}. ${a}`).join("\n");
-                          setInlineDefectFields(s => ({ ...s, [fieldKey]: allActions }));
-                        }} style={{ marginTop: 4, padding: "4px 12px", background: COLORS.accent, color: "#fff", borderRadius: 4, fontSize: 9, fontWeight: 700, letterSpacing: 1, fontFamily: "inherit" }}>
-                          APPLY ALL →
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-
-              {/* RCA TOOLS */}
-              <div style={{ marginTop: 8, marginBottom: 16, background: COLORS.card, border: `1px solid ${COLORS.purpleDim}`, borderRadius: 8, overflow: "hidden" }}>
-                <div style={{ padding: "10px 14px", borderBottom: `1px solid ${COLORS.border}`, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                  <div style={{ fontSize: 9, color: COLORS.purple, letterSpacing: 1, fontWeight: 700 }}>D4 — ROOT CAUSE ANALYSIS TOOLS</div>
-                  <div style={{ display: "flex", gap: 6 }}>
-                    <button className="nav-btn" disabled={aiLoading}
-                      onClick={async () => {
-                        if (rcaPanel?.defectId === selectedDefect.id && rcaPanel?.tool === "5why") { setRcaPanel(null); return; }
-                        const result = await callAI("rca5why", { title: selectedDefect.title, description: selectedDefect.description, containment: selectedDefect.containment });
-                        if (result && result.whys) setRcaPanel({ defectId: selectedDefect.id, tool: "5why", result });
-                      }}
-                      style={{ padding: "4px 10px", background: rcaPanel?.defectId === selectedDefect.id && rcaPanel?.tool === "5why" ? COLORS.purple : COLORS.purpleDim, color: "#fff", borderRadius: 4, fontSize: 9, fontWeight: 700, letterSpacing: 1, fontFamily: "inherit", opacity: aiLoading ? 0.5 : 1 }}>
-                      {aiLoading && rcaPanel === null ? "..." : "5-WHY"}
-                    </button>
-                    <button className="nav-btn" disabled={aiLoading}
-                      onClick={async () => {
-                        if (rcaPanel?.defectId === selectedDefect.id && rcaPanel?.tool === "fishbone") { setRcaPanel(null); return; }
-                        const result = await callAI("rcaFishbone", { title: selectedDefect.title, description: selectedDefect.description, containment: selectedDefect.containment });
-                        if (result && result.categories) setRcaPanel({ defectId: selectedDefect.id, tool: "fishbone", result });
-                      }}
-                      style={{ padding: "4px 10px", background: rcaPanel?.defectId === selectedDefect.id && rcaPanel?.tool === "fishbone" ? COLORS.purple : COLORS.purpleDim, color: "#fff", borderRadius: 4, fontSize: 9, fontWeight: 700, letterSpacing: 1, fontFamily: "inherit", opacity: aiLoading ? 0.5 : 1 }}>
-                      {aiLoading && rcaPanel === null ? "..." : "FISHBONE"}
-                    </button>
-                    <button className="nav-btn" disabled={aiLoading}
-                      onClick={async () => {
-                        if (rcaPanel?.defectId === selectedDefect.id && rcaPanel?.tool === "fta") { setRcaPanel(null); return; }
-                        const result = await callAI("rcaFaultTree", { title: selectedDefect.title, description: selectedDefect.description, containment: selectedDefect.containment });
-                        if (result && result.tree) setRcaPanel({ defectId: selectedDefect.id, tool: "fta", result });
-                      }}
-                      style={{ padding: "4px 10px", background: rcaPanel?.defectId === selectedDefect.id && rcaPanel?.tool === "fta" ? COLORS.teal : COLORS.tealDim, color: "#fff", borderRadius: 4, fontSize: 9, fontWeight: 700, letterSpacing: 1, fontFamily: "inherit", opacity: aiLoading ? 0.5 : 1 }}>
-                      {aiLoading && rcaPanel === null ? "..." : "FAULT TREE"}
-                    </button>
+                { label: "D8 — TEAM RECOGNITION", key: "recognition", color: COLORS.teal },
+              ].map(f => (
+                <div key={f.key} style={{ marginBottom: 10, background: COLORS.card, borderRadius: 6, border: `1px solid ${COLORS.border}`, overflow: "hidden" }}>
+                  <div style={{ padding: "6px 12px", borderBottom: `1px solid ${COLORS.border}`, fontSize: 9, color: f.color, letterSpacing: 1, fontWeight: 700 }}>{f.label}</div>
+                  <div style={{ padding: "8px 12px", fontSize: 12, color: selectedDefect[f.key] ? COLORS.text : COLORS.textMuted, lineHeight: 1.6, whiteSpace: "pre-wrap", fontStyle: selectedDefect[f.key] ? "normal" : "italic", minHeight: 36 }}>
+                    {selectedDefect[f.key] || "Not yet completed — click EDIT to add content."}
                   </div>
                 </div>
-
-                {rcaPanel?.defectId === selectedDefect.id && rcaPanel?.tool === "5why" && (
-                  <div style={{ padding: "14px 16px" }}>
-                    <div style={{ fontSize: 10, color: COLORS.textMuted, marginBottom: 12 }}>
-                      <span style={{ color: COLORS.purple, fontWeight: 700 }}>PROBLEM: </span>{rcaPanel.result.problem}
-                    </div>
-                    {rcaPanel.result.whys.map((w, i) => (
-                      <div key={i} style={{ marginBottom: 10, paddingLeft: i * 8, borderLeft: `2px solid ${COLORS.purple}${Math.round((255 - i * 40)).toString(16).padStart(2,"0")}` }}>
-                        <div style={{ fontSize: 9, color: COLORS.purple, letterSpacing: 1, marginBottom: 3 }}>WHY #{i + 1}</div>
-                        <div style={{ fontSize: 10, color: COLORS.textDim, marginBottom: 3 }}>{w.why}</div>
-                        <textarea
-                          value={w.answer}
-                          onChange={e => {
-                            const updated = rcaPanel.result.whys.map((x, j) => j === i ? { ...x, answer: e.target.value } : x);
-                            setRcaPanel(s => ({ ...s, result: { ...s.result, whys: updated } }));
-                          }}
-                          rows={2}
-                          style={{ width: "100%", background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: 4, padding: "5px 8px", color: COLORS.text, fontSize: 11, fontFamily: "inherit", resize: "vertical", outline: "none", lineHeight: 1.5, boxSizing: "border-box" }}
-                        />
-                      </div>
-                    ))}
-                    <div style={{ marginTop: 12, padding: "10px 12px", background: COLORS.purpleDim, borderRadius: 6, border: `1px solid ${COLORS.purple}44` }}>
-                      <div style={{ fontSize: 9, color: COLORS.purple, letterSpacing: 1, marginBottom: 4 }}>ROOT CAUSE <span style={{ color: COLORS.textMuted, fontWeight: 400 }}>(editable)</span></div>
-                      <textarea
-                        value={rcaPanel.result.rootCause}
-                        onChange={e => setRcaPanel(s => ({ ...s, result: { ...s.result, rootCause: e.target.value } }))}
-                        rows={2}
-                        style={{ width: "100%", background: "transparent", border: `1px solid ${COLORS.purple}44`, borderRadius: 4, padding: "5px 8px", color: COLORS.text, fontSize: 11, fontFamily: "inherit", resize: "vertical", outline: "none", lineHeight: 1.5, boxSizing: "border-box" }}
-                      />
-                    </div>
-                    <button className="nav-btn"
-                      onClick={() => saveInlineDefectField(selectedDefect.id, "rootCause", rcaPanel.result.rootCause)}
-                      style={{ marginTop: 10, padding: "5px 12px", background: COLORS.tealDim, color: COLORS.teal, borderRadius: 4, fontSize: 9, fontWeight: 700, letterSpacing: 1, fontFamily: "inherit", border: `1px solid ${COLORS.teal}44` }}>
-                      APPLY TO D4 →
-                    </button>
-                  </div>
-                )}
-
-                {rcaPanel?.defectId === selectedDefect.id && rcaPanel?.tool === "fishbone" && (
-                  <div style={{ padding: "14px 16px" }}>
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 12 }}>
-                      {Object.entries(rcaPanel.result.categories).map(([cat, causes]) => {
-                        const isPrimary = cat === rcaPanel.result.primaryCategory;
-                        return (
-                          <div key={cat} style={{ background: isPrimary ? COLORS.purpleDim : COLORS.surface, border: `1px solid ${isPrimary ? COLORS.purple : COLORS.border}`, borderRadius: 6, padding: "8px 10px" }}>
-                            <div style={{ fontSize: 9, fontWeight: 700, color: isPrimary ? COLORS.purple : COLORS.textMuted, letterSpacing: 1, marginBottom: 5 }}>
-                              {isPrimary ? "★ " : ""}{cat.toUpperCase()}
-                            </div>
-                            {causes.length === 0
-                              ? <div style={{ fontSize: 10, color: COLORS.border }}>—</div>
-                              : causes.map((c, i) => (
-                                  <div key={i} style={{ fontSize: 10, color: COLORS.textDim, lineHeight: 1.5 }}>• {c}</div>
-                                ))}
-                          </div>
-                        );
-                      })}
-                    </div>
-                    <div style={{ padding: "10px 12px", background: COLORS.purpleDim, borderRadius: 6, border: `1px solid ${COLORS.purple}44` }}>
-                      <div style={{ fontSize: 9, color: COLORS.purple, letterSpacing: 1, marginBottom: 4 }}>LIKELY ROOT CAUSE — {rcaPanel.result.primaryCategory}</div>
-                      <div style={{ fontSize: 11, color: COLORS.text, lineHeight: 1.5 }}>{rcaPanel.result.summary}</div>
-                    </div>
-                    <button className="nav-btn"
-                      onClick={() => saveInlineDefectField(selectedDefect.id, "rootCause", rcaPanel.result.summary)}
-                      style={{ marginTop: 10, padding: "5px 12px", background: COLORS.tealDim, color: COLORS.teal, borderRadius: 4, fontSize: 9, fontWeight: 700, letterSpacing: 1, fontFamily: "inherit", border: `1px solid ${COLORS.teal}44` }}>
-                      APPLY TO D4 →
-                    </button>
-                  </div>
-                )}
-
-                {rcaPanel?.defectId === selectedDefect.id && rcaPanel?.tool === "fta" && (() => {
-                  const renderNode = (node, depth = 0) => (
-                    <div key={node.label} style={{ marginLeft: depth * 16, marginBottom: 6 }}>
-                      <div style={{ display: "flex", alignItems: "flex-start", gap: 6 }}>
-                        {depth > 0 && <div style={{ width: 2, minWidth: 2, background: COLORS.teal, borderRadius: 1, alignSelf: "stretch", opacity: 0.4 }} />}
-                        <div style={{ flex: 1 }}>
-                          <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 2 }}>
-                            {node.type === "basic"
-                              ? <span style={{ fontSize: 8, padding: "1px 5px", background: COLORS.tealDim, color: COLORS.teal, borderRadius: 3, letterSpacing: 1, fontWeight: 700, whiteSpace: "nowrap" }}>BASIC</span>
-                              : node.gate && <span style={{ fontSize: 8, padding: "1px 5px", background: node.gate === "AND" ? COLORS.accentDim : COLORS.purpleDim, color: node.gate === "AND" ? COLORS.accent : COLORS.purple, borderRadius: 3, letterSpacing: 1, fontWeight: 700, whiteSpace: "nowrap" }}>{node.gate}</span>
-                            }
-                            <span style={{ fontSize: 11, color: depth === 0 ? COLORS.text : COLORS.textDim, fontWeight: depth === 0 ? 700 : 400 }}>{node.label}</span>
-                          </div>
-                          {node.children && node.children.map(child => renderNode(child, depth + 1))}
-                        </div>
-                      </div>
-                    </div>
-                  );
-                  return (
-                    <div style={{ padding: "14px 16px" }}>
-                      <div style={{ fontSize: 10, color: COLORS.textMuted, marginBottom: 10 }}>
-                        <span style={{ color: COLORS.teal, fontWeight: 700 }}>TOP EVENT: </span>{rcaPanel.result.topEvent}
-                      </div>
-                      <div style={{ background: COLORS.surface, borderRadius: 6, padding: "10px 12px", marginBottom: 10, border: `1px solid ${COLORS.border}` }}>
-                        {renderNode(rcaPanel.result.tree)}
-                      </div>
-                      {rcaPanel.result.criticalPath && (
-                        <div style={{ marginBottom: 10, padding: "8px 10px", background: COLORS.accentDim, borderRadius: 6, border: `1px solid ${COLORS.accent}44` }}>
-                          <div style={{ fontSize: 9, color: COLORS.accent, letterSpacing: 1, marginBottom: 3 }}>CRITICAL PATH</div>
-                          <div style={{ fontSize: 10, color: COLORS.textDim, lineHeight: 1.5 }}>{rcaPanel.result.criticalPath}</div>
-                        </div>
-                      )}
-                      <div style={{ padding: "10px 12px", background: COLORS.tealDim, borderRadius: 6, border: `1px solid ${COLORS.teal}44`, marginBottom: 10 }}>
-                        <div style={{ fontSize: 9, color: COLORS.teal, letterSpacing: 1, marginBottom: 4 }}>ROOT CAUSE</div>
-                        <div style={{ fontSize: 11, color: COLORS.text, lineHeight: 1.5 }}>{rcaPanel.result.rootCause}</div>
-                      </div>
-                      <button className="nav-btn"
-                        onClick={() => saveInlineDefectField(selectedDefect.id, "rootCause", rcaPanel.result.rootCause)}
-                        style={{ padding: "5px 12px", background: COLORS.tealDim, color: COLORS.teal, borderRadius: 4, fontSize: 9, fontWeight: 700, letterSpacing: 1, fontFamily: "inherit", border: `1px solid ${COLORS.teal}44` }}>
-                        APPLY TO D4 →
-                      </button>
-                    </div>
-                  );
-                })()}
-              </div>
+              ))}
 
               {/* EVIDENCE */}
               <div style={{ marginTop: 16, background: COLORS.card, border: `1px solid ${COLORS.border}`, borderRadius: 8, overflow: "hidden" }}>
@@ -1859,7 +1622,29 @@ ${activeSprint ? `
                 <div style={{ fontSize: 10, color: COLORS.accent, letterSpacing: 1, marginBottom: 2 }}>EDIT 8D REPORT</div>
                 <div style={{ fontFamily: "'Bebas Neue'", fontSize: 26, letterSpacing: 3, color: COLORS.text }}>{defectEditForm.id}</div>
               </div>
-              <button className="nav-btn" onClick={() => setEditingDefect(false)} style={{ background: COLORS.border, color: COLORS.text, padding: "6px 14px", borderRadius: 6, fontSize: 13, fontFamily: "inherit" }}>✕ CANCEL</button>
+              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                <button className="nav-btn" disabled={aiLoading}
+                  onClick={async () => {
+                    const w = defectEditForm.fiveW2H || {};
+                    const desc = [w.what, w.who, w.where, w.when, w.why, w.how, w.howMuch].filter(Boolean).join(". ") || defectEditForm.description || "";
+                    const result = await callAI("fill8d", { title: defectEditForm.title, severity: defectEditForm.severity, description: desc });
+                    if (result) {
+                      setDefectEditForm(f => ({
+                        ...f,
+                        containment: f.containment || result.containment || "",
+                        rootCause: f.rootCause || result.rootCause || "",
+                        correctiveActions: f.correctiveActions || result.correctiveActions || "",
+                        implementation: f.implementation || result.implementation || "",
+                        preventiveActions: f.preventiveActions || result.preventiveActions || "",
+                        recognition: f.recognition || result.recognition || "",
+                      }));
+                    }
+                  }}
+                  style={{ padding: "6px 16px", background: aiLoading ? COLORS.border : "linear-gradient(135deg, #8B5CF6 0%, #14B8A6 100%)", color: "#fff", borderRadius: 6, fontSize: 11, fontWeight: 700, letterSpacing: 1, fontFamily: "inherit", opacity: aiLoading ? 0.6 : 1, border: "none" }}>
+                  {aiLoading ? "✦ GENERATING..." : "✦ AI FILL ALL"}
+                </button>
+                <button className="nav-btn" onClick={() => { setEditingDefect(false); setAiPhaseSuggest(null); }} style={{ background: COLORS.border, color: COLORS.text, padding: "6px 14px", borderRadius: 6, fontSize: 13, fontFamily: "inherit" }}>✕ CANCEL</button>
+              </div>
             </div>
             {/* Scrollable body */}
             <div style={{ flex: 1, overflow: "auto", padding: "24px 28px" }}>
@@ -1960,10 +1745,36 @@ ${activeSprint ? `
                 )}
               </div>
               {/* D3 — CONTAINMENT */}
-              <div style={{ marginBottom: 16 }}>
-                <div style={{ fontSize: 11, letterSpacing: 1, color: COLORS.textDim, marginBottom: 6, fontWeight: 600 }}>D3 — CONTAINMENT</div>
-                <textarea rows={3} value={defectEditForm.containment ?? ""} onChange={e => setDefectEditForm(f => ({ ...f, containment: e.target.value }))}
-                  style={{ width: "100%", background: COLORS.card, border: `1px solid ${COLORS.border}`, borderRadius: 6, padding: "9px 12px", color: COLORS.text, fontSize: 13, fontFamily: "inherit", resize: "vertical", outline: "none", boxSizing: "border-box" }} />
+              <div style={{ marginBottom: 16, background: COLORS.card, border: `1px solid ${COLORS.green}33`, borderRadius: 8, overflow: "hidden" }}>
+                <div style={{ padding: "10px 16px", borderBottom: `1px solid ${COLORS.border}`, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                  <div style={{ fontSize: 11, color: COLORS.green, letterSpacing: 1, fontWeight: 700 }}>D3 — CONTAINMENT</div>
+                  <button className="nav-btn" disabled={aiLoading}
+                    onClick={async () => {
+                      if (aiPhaseSuggest?.key === "containment") { setAiPhaseSuggest(null); return; }
+                      const w = defectEditForm.fiveW2H || {};
+                      const desc = [w.what, w.who, w.where, w.when, w.why, w.how, w.howMuch].filter(Boolean).join(". ") || defectEditForm.description || "";
+                      const result = await callAI("aiContainment", { title: defectEditForm.title, description: desc, severity: defectEditForm.severity });
+                      if (result?.containment) setAiPhaseSuggest({ key: "containment", text: result.containment, summary: result.rationale });
+                    }}
+                    style={{ padding: "4px 12px", background: aiPhaseSuggest?.key === "containment" ? COLORS.green : `${COLORS.green}22`, color: aiPhaseSuggest?.key === "containment" ? "#fff" : COLORS.green, borderRadius: 4, fontSize: 9, fontWeight: 700, letterSpacing: 1, fontFamily: "inherit", opacity: aiLoading ? 0.5 : 1, border: `1px solid ${COLORS.green}44` }}>
+                    {aiLoading ? "✦ ..." : aiPhaseSuggest?.key === "containment" ? "✕ HIDE" : "✦ AI SUGGEST"}
+                  </button>
+                </div>
+                {aiPhaseSuggest?.key === "containment" && (
+                  <div style={{ padding: "12px 16px", borderBottom: `1px solid ${COLORS.border}`, background: `${COLORS.green}0D` }}>
+                    {aiPhaseSuggest.summary && <div style={{ fontSize: 10, color: COLORS.textDim, lineHeight: 1.5, marginBottom: 8, fontStyle: "italic" }}>{aiPhaseSuggest.summary}</div>}
+                    <div style={{ fontSize: 12, color: COLORS.text, lineHeight: 1.6, whiteSpace: "pre-wrap", marginBottom: 10 }}>{aiPhaseSuggest.text}</div>
+                    <button className="nav-btn" onClick={() => { setDefectEditForm(f => ({ ...f, containment: aiPhaseSuggest.text })); setAiPhaseSuggest(null); }}
+                      style={{ padding: "5px 14px", background: COLORS.green, color: "#fff", borderRadius: 4, fontSize: 9, fontWeight: 700, letterSpacing: 1, fontFamily: "inherit" }}>
+                      APPLY TO D3 →
+                    </button>
+                  </div>
+                )}
+                <div style={{ padding: "12px 16px" }}>
+                  <textarea rows={3} value={defectEditForm.containment ?? ""} onChange={e => setDefectEditForm(f => ({ ...f, containment: e.target.value }))}
+                    placeholder="Immediate actions taken to contain the defect..."
+                    style={{ width: "100%", background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: 6, padding: "9px 12px", color: COLORS.text, fontSize: 13, fontFamily: "inherit", resize: "vertical", outline: "none", boxSizing: "border-box" }} />
+                </div>
               </div>
               {/* D4 — ROOT CAUSE with RCA tools */}
               <div style={{ marginBottom: 16, background: COLORS.card, border: `1px solid ${COLORS.purpleDim}`, borderRadius: 8, overflow: "hidden" }}>
@@ -2084,19 +1895,141 @@ ${activeSprint ? `
                     style={{ width: "100%", background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: 6, padding: "9px 12px", color: COLORS.text, fontSize: 13, fontFamily: "inherit", resize: "vertical", outline: "none", boxSizing: "border-box" }} />
                 </div>
               </div>
-              {/* D5–D8 fields */}
-              {[
-                { label: "D5 — CORRECTIVE ACTIONS", key: "correctiveActions" },
-                { label: "D6 — IMPLEMENTATION & VALIDATION", key: "implementation" },
-                { label: "D7 — PREVENT RECURRENCE", key: "preventiveActions" },
-                { label: "D8 — TEAM RECOGNITION", key: "recognition" },
-              ].map(({ label, key }) => (
-                <div key={key} style={{ marginBottom: 16 }}>
-                  <div style={{ fontSize: 11, letterSpacing: 1, color: COLORS.textDim, marginBottom: 6, fontWeight: 600 }}>{label}</div>
-                  <textarea rows={3} value={defectEditForm[key] ?? ""} onChange={e => setDefectEditForm(f => ({ ...f, [key]: e.target.value }))}
-                    style={{ width: "100%", background: COLORS.card, border: `1px solid ${COLORS.border}`, borderRadius: 6, padding: "9px 12px", color: COLORS.text, fontSize: 13, fontFamily: "inherit", resize: "vertical", outline: "none", boxSizing: "border-box" }} />
+              {/* D5 — CORRECTIVE ACTIONS */}
+              <div style={{ marginBottom: 16, background: COLORS.card, border: `1px solid ${COLORS.accent}33`, borderRadius: 8, overflow: "hidden" }}>
+                <div style={{ padding: "10px 16px", borderBottom: `1px solid ${COLORS.border}`, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                  <div style={{ fontSize: 11, color: COLORS.accent, letterSpacing: 1, fontWeight: 700 }}>D5 — CORRECTIVE ACTIONS</div>
+                  <button className="nav-btn" disabled={aiLoading}
+                    onClick={async () => {
+                      if (aiPhaseSuggest?.key === "correctiveActions") { setAiPhaseSuggest(null); return; }
+                      const w = defectEditForm.fiveW2H || {};
+                      const desc = [w.what, w.who, w.where, w.when, w.why, w.how, w.howMuch].filter(Boolean).join(". ") || defectEditForm.description || "";
+                      const result = await callAI("correctiveActions", { title: defectEditForm.title, description: desc, rootCause: defectEditForm.rootCause, containment: defectEditForm.containment });
+                      if (result?.actions) setAiPhaseSuggest({ key: "correctiveActions", text: result.actions.map((a, i) => `${i + 1}. ${a}`).join("\n"), actions: result.actions, summary: result.summary });
+                    }}
+                    style={{ padding: "4px 12px", background: aiPhaseSuggest?.key === "correctiveActions" ? COLORS.accent : `${COLORS.accent}22`, color: aiPhaseSuggest?.key === "correctiveActions" ? "#fff" : COLORS.accent, borderRadius: 4, fontSize: 9, fontWeight: 700, letterSpacing: 1, fontFamily: "inherit", opacity: aiLoading ? 0.5 : 1, border: `1px solid ${COLORS.accent}44` }}>
+                    {aiLoading ? "✦ ..." : aiPhaseSuggest?.key === "correctiveActions" ? "✕ HIDE" : "✦ AI SUGGEST"}
+                  </button>
                 </div>
-              ))}
+                {aiPhaseSuggest?.key === "correctiveActions" && (
+                  <div style={{ padding: "12px 16px", borderBottom: `1px solid ${COLORS.border}`, background: `${COLORS.accent}0D` }}>
+                    {aiPhaseSuggest.summary && <div style={{ fontSize: 10, color: COLORS.textDim, lineHeight: 1.5, marginBottom: 8, fontStyle: "italic" }}>{aiPhaseSuggest.summary}</div>}
+                    {(aiPhaseSuggest.actions || []).map((action, i) => (
+                      <div key={i} style={{ display: "flex", gap: 8, alignItems: "flex-start", marginBottom: 6 }}>
+                        <span style={{ fontSize: 10, color: COLORS.accent, fontWeight: 700, flexShrink: 0, marginTop: 1 }}>{i + 1}.</span>
+                        <span style={{ fontSize: 11, color: COLORS.text, flex: 1, lineHeight: 1.5 }}>{action}</span>
+                        <button className="nav-btn" onClick={() => {
+                          const existing = defectEditForm.correctiveActions ?? "";
+                          setDefectEditForm(f => ({ ...f, correctiveActions: existing ? `${existing}\n${i + 1}. ${action}` : `${i + 1}. ${action}` }));
+                        }} style={{ padding: "2px 6px", background: COLORS.surface, color: COLORS.teal, borderRadius: 3, fontSize: 8, fontWeight: 700, letterSpacing: 1, fontFamily: "inherit", flexShrink: 0, border: `1px solid ${COLORS.teal}44` }}>
+                          + ADD
+                        </button>
+                      </div>
+                    ))}
+                    <button className="nav-btn" onClick={() => { setDefectEditForm(f => ({ ...f, correctiveActions: aiPhaseSuggest.text })); setAiPhaseSuggest(null); }}
+                      style={{ marginTop: 6, padding: "5px 14px", background: COLORS.accent, color: "#fff", borderRadius: 4, fontSize: 9, fontWeight: 700, letterSpacing: 1, fontFamily: "inherit" }}>
+                      APPLY ALL →
+                    </button>
+                  </div>
+                )}
+                <div style={{ padding: "12px 16px" }}>
+                  <textarea rows={3} value={defectEditForm.correctiveActions ?? ""} onChange={e => setDefectEditForm(f => ({ ...f, correctiveActions: e.target.value }))}
+                    placeholder="Permanent corrective actions to eliminate root cause..."
+                    style={{ width: "100%", background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: 6, padding: "9px 12px", color: COLORS.text, fontSize: 13, fontFamily: "inherit", resize: "vertical", outline: "none", boxSizing: "border-box" }} />
+                </div>
+              </div>
+
+              {/* D6 — IMPLEMENTATION & VALIDATION */}
+              <div style={{ marginBottom: 16, background: COLORS.card, border: `1px solid ${COLORS.yellow}33`, borderRadius: 8, overflow: "hidden" }}>
+                <div style={{ padding: "10px 16px", borderBottom: `1px solid ${COLORS.border}`, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                  <div style={{ fontSize: 11, color: COLORS.yellow, letterSpacing: 1, fontWeight: 700 }}>D6 — IMPLEMENTATION & VALIDATION</div>
+                  <button className="nav-btn" disabled={aiLoading}
+                    onClick={async () => {
+                      if (aiPhaseSuggest?.key === "implementation") { setAiPhaseSuggest(null); return; }
+                      const result = await callAI("aiImplementation", { title: defectEditForm.title, rootCause: defectEditForm.rootCause, correctiveActions: defectEditForm.correctiveActions, containment: defectEditForm.containment });
+                      if (result?.implementation) setAiPhaseSuggest({ key: "implementation", text: result.implementation, summary: result.kpis?.length ? `KPIs: ${result.kpis.join(" · ")}` : "" });
+                    }}
+                    style={{ padding: "4px 12px", background: aiPhaseSuggest?.key === "implementation" ? COLORS.yellow : `${COLORS.yellow}22`, color: aiPhaseSuggest?.key === "implementation" ? "#000" : COLORS.yellow, borderRadius: 4, fontSize: 9, fontWeight: 700, letterSpacing: 1, fontFamily: "inherit", opacity: aiLoading ? 0.5 : 1, border: `1px solid ${COLORS.yellow}44` }}>
+                    {aiLoading ? "✦ ..." : aiPhaseSuggest?.key === "implementation" ? "✕ HIDE" : "✦ AI SUGGEST"}
+                  </button>
+                </div>
+                {aiPhaseSuggest?.key === "implementation" && (
+                  <div style={{ padding: "12px 16px", borderBottom: `1px solid ${COLORS.border}`, background: `${COLORS.yellow}0D` }}>
+                    {aiPhaseSuggest.summary && <div style={{ fontSize: 10, color: COLORS.yellow, fontWeight: 700, marginBottom: 8 }}>{aiPhaseSuggest.summary}</div>}
+                    <div style={{ fontSize: 12, color: COLORS.text, lineHeight: 1.6, whiteSpace: "pre-wrap", marginBottom: 10 }}>{aiPhaseSuggest.text}</div>
+                    <button className="nav-btn" onClick={() => { setDefectEditForm(f => ({ ...f, implementation: aiPhaseSuggest.text })); setAiPhaseSuggest(null); }}
+                      style={{ padding: "5px 14px", background: COLORS.yellow, color: "#000", borderRadius: 4, fontSize: 9, fontWeight: 700, letterSpacing: 1, fontFamily: "inherit" }}>
+                      APPLY TO D6 →
+                    </button>
+                  </div>
+                )}
+                <div style={{ padding: "12px 16px" }}>
+                  <textarea rows={3} value={defectEditForm.implementation ?? ""} onChange={e => setDefectEditForm(f => ({ ...f, implementation: e.target.value }))}
+                    placeholder="Implementation timeline, owners, and validation criteria..."
+                    style={{ width: "100%", background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: 6, padding: "9px 12px", color: COLORS.text, fontSize: 13, fontFamily: "inherit", resize: "vertical", outline: "none", boxSizing: "border-box" }} />
+                </div>
+              </div>
+
+              {/* D7 — PREVENT RECURRENCE */}
+              <div style={{ marginBottom: 16, background: COLORS.card, border: `1px solid ${COLORS.green}33`, borderRadius: 8, overflow: "hidden" }}>
+                <div style={{ padding: "10px 16px", borderBottom: `1px solid ${COLORS.border}`, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                  <div style={{ fontSize: 11, color: COLORS.green, letterSpacing: 1, fontWeight: 700 }}>D7 — PREVENT RECURRENCE</div>
+                  <button className="nav-btn" disabled={aiLoading}
+                    onClick={async () => {
+                      if (aiPhaseSuggest?.key === "preventiveActions") { setAiPhaseSuggest(null); return; }
+                      const result = await callAI("aiPreventive", { title: defectEditForm.title, rootCause: defectEditForm.rootCause, correctiveActions: defectEditForm.correctiveActions });
+                      if (result?.preventiveActions) setAiPhaseSuggest({ key: "preventiveActions", text: result.preventiveActions, summary: result.systemicChanges?.length ? `Systemic: ${result.systemicChanges.join(" · ")}` : "" });
+                    }}
+                    style={{ padding: "4px 12px", background: aiPhaseSuggest?.key === "preventiveActions" ? COLORS.green : `${COLORS.green}22`, color: aiPhaseSuggest?.key === "preventiveActions" ? "#fff" : COLORS.green, borderRadius: 4, fontSize: 9, fontWeight: 700, letterSpacing: 1, fontFamily: "inherit", opacity: aiLoading ? 0.5 : 1, border: `1px solid ${COLORS.green}44` }}>
+                    {aiLoading ? "✦ ..." : aiPhaseSuggest?.key === "preventiveActions" ? "✕ HIDE" : "✦ AI SUGGEST"}
+                  </button>
+                </div>
+                {aiPhaseSuggest?.key === "preventiveActions" && (
+                  <div style={{ padding: "12px 16px", borderBottom: `1px solid ${COLORS.border}`, background: `${COLORS.green}0D` }}>
+                    {aiPhaseSuggest.summary && <div style={{ fontSize: 10, color: COLORS.green, fontWeight: 700, marginBottom: 8 }}>{aiPhaseSuggest.summary}</div>}
+                    <div style={{ fontSize: 12, color: COLORS.text, lineHeight: 1.6, whiteSpace: "pre-wrap", marginBottom: 10 }}>{aiPhaseSuggest.text}</div>
+                    <button className="nav-btn" onClick={() => { setDefectEditForm(f => ({ ...f, preventiveActions: aiPhaseSuggest.text })); setAiPhaseSuggest(null); }}
+                      style={{ padding: "5px 14px", background: COLORS.green, color: "#fff", borderRadius: 4, fontSize: 9, fontWeight: 700, letterSpacing: 1, fontFamily: "inherit" }}>
+                      APPLY TO D7 →
+                    </button>
+                  </div>
+                )}
+                <div style={{ padding: "12px 16px" }}>
+                  <textarea rows={3} value={defectEditForm.preventiveActions ?? ""} onChange={e => setDefectEditForm(f => ({ ...f, preventiveActions: e.target.value }))}
+                    placeholder="Systemic actions to prevent recurrence across processes..."
+                    style={{ width: "100%", background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: 6, padding: "9px 12px", color: COLORS.text, fontSize: 13, fontFamily: "inherit", resize: "vertical", outline: "none", boxSizing: "border-box" }} />
+                </div>
+              </div>
+
+              {/* D8 — TEAM RECOGNITION */}
+              <div style={{ marginBottom: 24, background: COLORS.card, border: `1px solid ${COLORS.teal}33`, borderRadius: 8, overflow: "hidden" }}>
+                <div style={{ padding: "10px 16px", borderBottom: `1px solid ${COLORS.border}`, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                  <div style={{ fontSize: 11, color: COLORS.teal, letterSpacing: 1, fontWeight: 700 }}>D8 — TEAM RECOGNITION</div>
+                  <button className="nav-btn" disabled={aiLoading}
+                    onClick={async () => {
+                      if (aiPhaseSuggest?.key === "recognition") { setAiPhaseSuggest(null); return; }
+                      const result = await callAI("aiRecognition", { title: defectEditForm.title, team: defectEditForm.team, owner: defectEditForm.owner });
+                      if (result?.recognition) setAiPhaseSuggest({ key: "recognition", text: result.recognition, summary: "" });
+                    }}
+                    style={{ padding: "4px 12px", background: aiPhaseSuggest?.key === "recognition" ? COLORS.teal : `${COLORS.teal}22`, color: aiPhaseSuggest?.key === "recognition" ? "#fff" : COLORS.teal, borderRadius: 4, fontSize: 9, fontWeight: 700, letterSpacing: 1, fontFamily: "inherit", opacity: aiLoading ? 0.5 : 1, border: `1px solid ${COLORS.teal}44` }}>
+                    {aiLoading ? "✦ ..." : aiPhaseSuggest?.key === "recognition" ? "✕ HIDE" : "✦ AI WRITE"}
+                  </button>
+                </div>
+                {aiPhaseSuggest?.key === "recognition" && (
+                  <div style={{ padding: "12px 16px", borderBottom: `1px solid ${COLORS.border}`, background: `${COLORS.teal}0D` }}>
+                    <div style={{ fontSize: 12, color: COLORS.text, lineHeight: 1.7, whiteSpace: "pre-wrap", marginBottom: 10, fontStyle: "italic" }}>{aiPhaseSuggest.text}</div>
+                    <button className="nav-btn" onClick={() => { setDefectEditForm(f => ({ ...f, recognition: aiPhaseSuggest.text })); setAiPhaseSuggest(null); }}
+                      style={{ padding: "5px 14px", background: COLORS.teal, color: "#fff", borderRadius: 4, fontSize: 9, fontWeight: 700, letterSpacing: 1, fontFamily: "inherit" }}>
+                      APPLY TO D8 →
+                    </button>
+                  </div>
+                )}
+                <div style={{ padding: "12px 16px" }}>
+                  <textarea rows={3} value={defectEditForm.recognition ?? ""} onChange={e => setDefectEditForm(f => ({ ...f, recognition: e.target.value }))}
+                    placeholder="Team recognition and lessons learned celebration..."
+                    style={{ width: "100%", background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: 6, padding: "9px 12px", color: COLORS.text, fontSize: 13, fontFamily: "inherit", resize: "vertical", outline: "none", boxSizing: "border-box" }} />
+                </div>
+              </div>
               <button className="nav-btn" onClick={saveDefectEdit}
                 style={{ width: "100%", padding: "12px 0", background: COLORS.accent, color: "#fff", borderRadius: 8, fontSize: 14, fontWeight: 700, letterSpacing: 1, fontFamily: "inherit" }}>
                 SAVE CHANGES
