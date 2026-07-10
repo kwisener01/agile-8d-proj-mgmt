@@ -147,6 +147,7 @@ export default function FlowForge() {
   const [sprintPlan, setSprintPlan] = useState(null);
   const [storyPrompt, setStoryPrompt] = useState("");
   const [rcaPanel, setRcaPanel] = useState(null); // { defectId, tool, result }
+  const [rcaMode, setRcaMode] = useState("ai"); // "ai" | "manual"
   const [addingToSprint, setAddingToSprint] = useState(null); // sprintId showing the add-story picker
   const [evidence, setEvidence] = useState({}); // { [defectId]: [...] }
   const [uploadingEvidence, setUploadingEvidence] = useState(false);
@@ -201,6 +202,56 @@ export default function FlowForge() {
     await fetch(`/api/defects/${defectId}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fiveW2H }) });
     setData(d => ({ ...d, defects: d.defects.map(def => def.id === defectId ? { ...def, fiveW2H } : def) }));
     setSelectedDefect(s => s?.id === defectId ? { ...s, fiveW2H } : s);
+  };
+
+  // Blank editable templates for manual RCA (no AI)
+  const blankRcaScaffold = (tool, desc) => {
+    if (tool === "5why") {
+      return {
+        problem: desc || "",
+        whys: Array.from({ length: 5 }, () => ({ why: "", answer: "" })),
+        rootCause: "",
+      };
+    }
+    if (tool === "fishbone") {
+      return {
+        categories: { Man: [], Machine: [], Method: [], Material: [], Measurement: [], Environment: [] },
+        primaryCategory: "Man",
+        summary: "",
+      };
+    }
+    // fta
+    return {
+      topEvent: desc || "",
+      tree: { label: desc || "", gate: "OR", children: [] },
+      criticalPath: "",
+      rootCause: "",
+    };
+  };
+
+  // Immutable fault-tree editing helpers (path = array of child indices from root)
+  const updateTreeNodeAt = (node, path, updater) => {
+    if (path.length === 0) return updater(node);
+    const [i, ...rest] = path;
+    return { ...node, children: node.children.map((c, idx) => (idx === i ? updateTreeNodeAt(c, rest, updater) : c)) };
+  };
+  const addTreeChildAt = (root, path) =>
+    updateTreeNodeAt(root, path, (n) => {
+      const { type, ...rest } = n;
+      return { ...rest, gate: n.gate || "OR", children: [...(n.children || []), { label: "", type: "basic" }] };
+    });
+  const removeTreeNodeAt = (root, path) => {
+    if (path.length === 0) return root; // never remove root
+    const parentPath = path.slice(0, -1);
+    const removeIdx = path[path.length - 1];
+    return updateTreeNodeAt(root, parentPath, (parent) => {
+      const children = parent.children.filter((_, idx) => idx !== removeIdx);
+      if (children.length === 0) {
+        const { gate, children: _c, ...rest } = parent;
+        return { ...rest, type: "basic" };
+      }
+      return { ...parent, children };
+    });
   };
 
   const callAI = async (action, payload) => {
@@ -2086,40 +2137,76 @@ ${activeSprint ? `
               <div style={{ marginBottom: 16, background: COLORS.card, border: `1px solid ${COLORS.purpleDim}`, borderRadius: 8, overflow: "hidden" }}>
                 <div style={{ padding: "10px 16px", borderBottom: `1px solid ${COLORS.border}`, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                   <div style={{ fontSize: 11, color: COLORS.purple, letterSpacing: 1, fontWeight: 700 }}>D4 — ROOT CAUSE</div>
-                  <div style={{ display: "flex", gap: 6 }}>
+                  <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+                    {/* AI / MANUAL mode toggle */}
+                    <div style={{ display: "flex", border: `1px solid ${COLORS.border}`, borderRadius: 4, overflow: "hidden" }}>
+                      {[
+                        { m: "ai", label: "✦ AI" },
+                        { m: "manual", label: "✎ MANUAL" },
+                      ].map(({ m, label }) => (
+                        <button key={m} className="nav-btn" onClick={() => setRcaMode(m)}
+                          style={{ padding: "4px 8px", background: rcaMode === m ? COLORS.purple : "transparent", color: rcaMode === m ? "#fff" : COLORS.textMuted, fontSize: 9, fontWeight: 700, letterSpacing: 1, fontFamily: "inherit", border: "none" }}>
+                          {label}
+                        </button>
+                      ))}
+                    </div>
                     {[
                       { label: "5-WHY", tool: "5why", aiAction: "rca5why", check: r => r?.whys, color: COLORS.purple, dimColor: COLORS.purpleDim },
                       { label: "FISHBONE", tool: "fishbone", aiAction: "rcaFishbone", check: r => r?.categories, color: COLORS.purple, dimColor: COLORS.purpleDim },
                       { label: "FAULT TREE", tool: "fta", aiAction: "rcaFaultTree", check: r => r?.tree, color: COLORS.teal, dimColor: COLORS.tealDim },
-                    ].map(({ label, tool, aiAction, check, color, dimColor }) => (
-                      <button key={tool} className="nav-btn" disabled={aiLoading}
+                    ].map(({ label, tool, aiAction, check, color, dimColor }) => {
+                      const active = rcaPanel?.defectId === defectEditForm.id && rcaPanel?.tool === tool;
+                      const busy = aiLoading && rcaMode === "ai";
+                      return (
+                      <button key={tool} className="nav-btn" disabled={busy}
                         onClick={async () => {
-                          if (rcaPanel?.defectId === defectEditForm.id && rcaPanel?.tool === tool) { setRcaPanel(null); return; }
+                          if (active) { setRcaPanel(null); return; }
                           const w = defectEditForm.fiveW2H || {};
                           const desc = [w.what, w.who, w.where, w.when, w.why, w.how, w.howMuch].filter(Boolean).join(". ") || defectEditForm.description || "";
+                          if (rcaMode === "manual") {
+                            setRcaPanel({ defectId: defectEditForm.id, tool, result: blankRcaScaffold(tool, desc) });
+                            return;
+                          }
                           const result = await callAI(aiAction, { title: defectEditForm.title, description: desc, containment: defectEditForm.containment });
                           if (result && check(result)) setRcaPanel({ defectId: defectEditForm.id, tool, result });
                         }}
-                        style={{ padding: "4px 10px", background: rcaPanel?.defectId === defectEditForm.id && rcaPanel?.tool === tool ? color : dimColor, color: "#fff", borderRadius: 4, fontSize: 9, fontWeight: 700, letterSpacing: 1, fontFamily: "inherit", opacity: aiLoading ? 0.5 : 1 }}>
-                        {aiLoading ? "..." : label}
+                        style={{ padding: "4px 10px", background: active ? color : dimColor, color: "#fff", borderRadius: 4, fontSize: 9, fontWeight: 700, letterSpacing: 1, fontFamily: "inherit", opacity: busy ? 0.5 : 1 }}>
+                        {busy ? "..." : label}
                       </button>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
                 {/* 5-WHY panel */}
                 {rcaPanel?.defectId === defectEditForm.id && rcaPanel?.tool === "5why" && (
                   <div style={{ padding: "14px 16px", borderBottom: `1px solid ${COLORS.border}` }}>
-                    <div style={{ fontSize: 10, color: COLORS.textMuted, marginBottom: 10 }}>
-                      <span style={{ color: COLORS.purple, fontWeight: 700 }}>PROBLEM: </span>{rcaPanel.result.problem}
+                    <div style={{ marginBottom: 10 }}>
+                      <div style={{ fontSize: 9, color: COLORS.purple, letterSpacing: 1, marginBottom: 3 }}>PROBLEM</div>
+                      <textarea value={rcaPanel.result.problem ?? ""} onChange={e => setRcaPanel(s => ({ ...s, result: { ...s.result, problem: e.target.value } }))}
+                        rows={2} placeholder="Describe the problem being analyzed..."
+                        style={{ width: "100%", background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: 4, padding: "5px 8px", color: COLORS.text, fontSize: 11, fontFamily: "inherit", resize: "vertical", outline: "none", boxSizing: "border-box" }} />
                     </div>
                     {rcaPanel.result.whys.map((w, i) => (
                       <div key={i} style={{ marginBottom: 10, paddingLeft: i * 8, borderLeft: `2px solid ${COLORS.purple}${Math.round((255 - i * 40)).toString(16).padStart(2,"0")}` }}>
-                        <div style={{ fontSize: 9, color: COLORS.purple, letterSpacing: 1, marginBottom: 3 }}>WHY #{i + 1}</div>
-                        <div style={{ fontSize: 10, color: COLORS.textDim, marginBottom: 3 }}>{w.why}</div>
+                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 3 }}>
+                          <div style={{ fontSize: 9, color: COLORS.purple, letterSpacing: 1 }}>WHY #{i + 1}</div>
+                          {rcaPanel.result.whys.length > 1 && (
+                            <button className="nav-btn" onClick={() => { const updated = rcaPanel.result.whys.filter((_, j) => j !== i); setRcaPanel(s => ({ ...s, result: { ...s.result, whys: updated } })); }}
+                              style={{ padding: "1px 6px", background: "transparent", color: COLORS.textMuted, borderRadius: 3, fontSize: 9, fontFamily: "inherit", border: `1px solid ${COLORS.border}` }}>✕</button>
+                          )}
+                        </div>
+                        <input value={w.why} onChange={e => { const updated = rcaPanel.result.whys.map((x, j) => j === i ? { ...x, why: e.target.value } : x); setRcaPanel(s => ({ ...s, result: { ...s.result, whys: updated } })); }}
+                          placeholder={`Why did ${i === 0 ? "the problem occur" : "that happen"}?`}
+                          style={{ width: "100%", background: "transparent", border: "none", borderBottom: `1px dashed ${COLORS.border}`, padding: "2px 0", color: COLORS.textDim, fontSize: 10, fontFamily: "inherit", outline: "none", boxSizing: "border-box", marginBottom: 4 }} />
                         <textarea value={w.answer} onChange={e => { const updated = rcaPanel.result.whys.map((x, j) => j === i ? { ...x, answer: e.target.value } : x); setRcaPanel(s => ({ ...s, result: { ...s.result, whys: updated } })); }}
-                          rows={2} style={{ width: "100%", background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: 4, padding: "5px 8px", color: COLORS.text, fontSize: 11, fontFamily: "inherit", resize: "vertical", outline: "none", boxSizing: "border-box" }} />
+                          rows={2} placeholder="Answer..."
+                          style={{ width: "100%", background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: 4, padding: "5px 8px", color: COLORS.text, fontSize: 11, fontFamily: "inherit", resize: "vertical", outline: "none", boxSizing: "border-box" }} />
                       </div>
                     ))}
+                    <button className="nav-btn" onClick={() => setRcaPanel(s => ({ ...s, result: { ...s.result, whys: [...s.result.whys, { why: "", answer: "" }] } }))}
+                      style={{ padding: "3px 10px", background: COLORS.purpleDim, color: COLORS.purple, borderRadius: 4, fontSize: 9, fontWeight: 700, letterSpacing: 1, fontFamily: "inherit", border: `1px solid ${COLORS.purple}44` }}>
+                      + ADD WHY
+                    </button>
                     <div style={{ marginTop: 10, padding: "10px 12px", background: COLORS.purpleDim, borderRadius: 6, border: `1px solid ${COLORS.purple}44` }}>
                       <div style={{ fontSize: 9, color: COLORS.purple, letterSpacing: 1, marginBottom: 4 }}>ROOT CAUSE <span style={{ color: COLORS.textMuted, fontWeight: 400 }}>(editable)</span></div>
                       <textarea value={rcaPanel.result.rootCause} onChange={e => setRcaPanel(s => ({ ...s, result: { ...s.result, rootCause: e.target.value } }))}
@@ -2139,15 +2226,32 @@ ${activeSprint ? `
                         const isPrimary = cat === rcaPanel.result.primaryCategory;
                         return (
                           <div key={cat} style={{ background: isPrimary ? COLORS.purpleDim : COLORS.surface, border: `1px solid ${isPrimary ? COLORS.purple : COLORS.border}`, borderRadius: 6, padding: "8px 10px" }}>
-                            <div style={{ fontSize: 9, fontWeight: 700, color: isPrimary ? COLORS.purple : COLORS.textMuted, letterSpacing: 1, marginBottom: 5 }}>{isPrimary ? "★ " : ""}{cat.toUpperCase()}</div>
-                            {causes.length === 0 ? <div style={{ fontSize: 10, color: COLORS.border }}>—</div> : causes.map((c, i) => <div key={i} style={{ fontSize: 10, color: COLORS.textDim, lineHeight: 1.5 }}>• {c}</div>)}
+                            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 5 }}>
+                              <div style={{ fontSize: 9, fontWeight: 700, color: isPrimary ? COLORS.purple : COLORS.textMuted, letterSpacing: 1 }}>{isPrimary ? "★ " : ""}{cat.toUpperCase()}</div>
+                              {!isPrimary && (
+                                <button className="nav-btn" onClick={() => setRcaPanel(s => ({ ...s, result: { ...s.result, primaryCategory: cat } }))}
+                                  style={{ padding: "1px 5px", background: "transparent", color: COLORS.textMuted, borderRadius: 3, fontSize: 8, fontFamily: "inherit", border: `1px solid ${COLORS.border}` }}>SET ★</button>
+                              )}
+                            </div>
+                            <textarea value={(causes || []).join("\n")}
+                              onChange={e => { const arr = e.target.value.split("\n").map(x => x.trim()).filter(Boolean); setRcaPanel(s => ({ ...s, result: { ...s.result, categories: { ...s.result.categories, [cat]: arr } } })); }}
+                              rows={3} placeholder="One cause per line..."
+                              style={{ width: "100%", background: "transparent", border: `1px solid ${COLORS.border}`, borderRadius: 4, padding: "4px 6px", color: COLORS.textDim, fontSize: 10, lineHeight: 1.5, fontFamily: "inherit", resize: "vertical", outline: "none", boxSizing: "border-box" }} />
                           </div>
                         );
                       })}
                     </div>
                     <div style={{ padding: "10px 12px", background: COLORS.purpleDim, borderRadius: 6, border: `1px solid ${COLORS.purple}44`, marginBottom: 10 }}>
-                      <div style={{ fontSize: 9, color: COLORS.purple, letterSpacing: 1, marginBottom: 4 }}>LIKELY ROOT CAUSE — {rcaPanel.result.primaryCategory}</div>
-                      <div style={{ fontSize: 11, color: COLORS.text, lineHeight: 1.5 }}>{rcaPanel.result.summary}</div>
+                      <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 5 }}>
+                        <span style={{ fontSize: 9, color: COLORS.purple, letterSpacing: 1 }}>LIKELY ROOT CAUSE —</span>
+                        <select value={rcaPanel.result.primaryCategory} onChange={e => setRcaPanel(s => ({ ...s, result: { ...s.result, primaryCategory: e.target.value } }))}
+                          style={{ background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: 4, padding: "2px 6px", color: COLORS.purple, fontSize: 9, fontWeight: 700, letterSpacing: 1, fontFamily: "inherit", outline: "none" }}>
+                          {Object.keys(rcaPanel.result.categories).map(c => <option key={c} value={c}>{c.toUpperCase()}</option>)}
+                        </select>
+                      </div>
+                      <textarea value={rcaPanel.result.summary ?? ""} onChange={e => setRcaPanel(s => ({ ...s, result: { ...s.result, summary: e.target.value } }))}
+                        rows={2} placeholder="Most likely root cause based on the analysis..."
+                        style={{ width: "100%", background: "transparent", border: `1px solid ${COLORS.purple}44`, borderRadius: 4, padding: "5px 8px", color: COLORS.text, fontSize: 11, fontFamily: "inherit", resize: "vertical", outline: "none", boxSizing: "border-box" }} />
                     </div>
                     <button className="nav-btn" onClick={() => { setDefectEditForm(f => ({ ...f, rootCause: rcaPanel.result.summary })); setRcaPanel(null); }}
                       style={{ padding: "5px 14px", background: COLORS.tealDim, color: COLORS.teal, borderRadius: 4, fontSize: 9, fontWeight: 700, letterSpacing: 1, fontFamily: "inherit", border: `1px solid ${COLORS.teal}44` }}>
@@ -2157,35 +2261,58 @@ ${activeSprint ? `
                 )}
                 {/* FAULT TREE panel */}
                 {rcaPanel?.defectId === defectEditForm.id && rcaPanel?.tool === "fta" && (() => {
-                  const renderNode = (node, depth = 0) => (
-                    <div key={node.label} style={{ marginLeft: depth * 16, marginBottom: 6 }}>
-                      <div style={{ display: "flex", alignItems: "flex-start", gap: 6 }}>
-                        {depth > 0 && <div style={{ width: 2, minWidth: 2, background: COLORS.teal, borderRadius: 1, alignSelf: "stretch", opacity: 0.4 }} />}
-                        <div style={{ flex: 1 }}>
-                          <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 2 }}>
-                            {node.type === "basic"
-                              ? <span style={{ fontSize: 8, padding: "1px 5px", background: COLORS.tealDim, color: COLORS.teal, borderRadius: 3, letterSpacing: 1, fontWeight: 700 }}>BASIC</span>
-                              : node.gate && <span style={{ fontSize: 8, padding: "1px 5px", background: node.gate === "AND" ? COLORS.accentDim : COLORS.purpleDim, color: node.gate === "AND" ? COLORS.accent : COLORS.purple, borderRadius: 3, letterSpacing: 1, fontWeight: 700 }}>{node.gate}</span>}
-                            <span style={{ fontSize: 11, color: depth === 0 ? COLORS.text : COLORS.textDim, fontWeight: depth === 0 ? 700 : 400 }}>{node.label}</span>
-                          </div>
-                          {node.children && node.children.map(child => renderNode(child, depth + 1))}
+                  const setTree = t => setRcaPanel(s => ({ ...s, result: { ...s.result, tree: t } }));
+                  const renderNode = (node, path = []) => {
+                    const isBasic = !node.children || node.children.length === 0;
+                    const depth = path.length;
+                    return (
+                      <div key={path.join("-") || "root"} style={{ marginLeft: depth * 16, marginBottom: 6 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                          {depth > 0 && <div style={{ width: 2, minWidth: 2, background: COLORS.teal, borderRadius: 1, alignSelf: "stretch", opacity: 0.4 }} />}
+                          {isBasic
+                            ? (depth > 0 && <span style={{ fontSize: 8, padding: "1px 5px", background: COLORS.tealDim, color: COLORS.teal, borderRadius: 3, letterSpacing: 1, fontWeight: 700, flexShrink: 0 }}>BASIC</span>)
+                            : (
+                              <select value={node.gate || "OR"} onChange={e => setTree(updateTreeNodeAt(rcaPanel.result.tree, path, n => ({ ...n, gate: e.target.value })))}
+                                style={{ fontSize: 8, padding: "1px 3px", background: (node.gate === "AND") ? COLORS.accentDim : COLORS.purpleDim, color: (node.gate === "AND") ? COLORS.accent : COLORS.purple, borderRadius: 3, letterSpacing: 1, fontWeight: 700, fontFamily: "inherit", border: "none", outline: "none", flexShrink: 0 }}>
+                                <option value="OR">OR</option>
+                                <option value="AND">AND</option>
+                              </select>
+                            )}
+                          <input value={node.label} onChange={e => setTree(updateTreeNodeAt(rcaPanel.result.tree, path, n => ({ ...n, label: e.target.value })))}
+                            placeholder={depth === 0 ? "Top undesired event" : "Cause..."}
+                            style={{ flex: 1, background: "transparent", border: "none", borderBottom: `1px dashed ${COLORS.border}`, padding: "2px 0", color: depth === 0 ? COLORS.text : COLORS.textDim, fontSize: 11, fontWeight: depth === 0 ? 700 : 400, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
+                          <button className="nav-btn" title="Add sub-cause" onClick={() => setTree(addTreeChildAt(rcaPanel.result.tree, path))}
+                            style={{ padding: "1px 6px", background: COLORS.tealDim, color: COLORS.teal, borderRadius: 3, fontSize: 9, fontWeight: 700, fontFamily: "inherit", border: `1px solid ${COLORS.teal}44`, flexShrink: 0 }}>+</button>
+                          {depth > 0 && (
+                            <button className="nav-btn" title="Remove" onClick={() => setTree(removeTreeNodeAt(rcaPanel.result.tree, path))}
+                              style={{ padding: "1px 6px", background: "transparent", color: COLORS.textMuted, borderRadius: 3, fontSize: 9, fontFamily: "inherit", border: `1px solid ${COLORS.border}`, flexShrink: 0 }}>✕</button>
+                          )}
                         </div>
+                        {node.children && node.children.map((child, i) => renderNode(child, [...path, i]))}
                       </div>
-                    </div>
-                  );
+                    );
+                  };
                   return (
                     <div style={{ padding: "14px 16px", borderBottom: `1px solid ${COLORS.border}` }}>
-                      <div style={{ fontSize: 10, color: COLORS.textMuted, marginBottom: 10 }}><span style={{ color: COLORS.teal, fontWeight: 700 }}>TOP EVENT: </span>{rcaPanel.result.topEvent}</div>
+                      <div style={{ marginBottom: 10 }}>
+                        <div style={{ fontSize: 9, color: COLORS.teal, letterSpacing: 1, fontWeight: 700, marginBottom: 3 }}>TOP EVENT</div>
+                        <input value={rcaPanel.result.topEvent ?? ""} onChange={e => setRcaPanel(s => ({ ...s, result: { ...s.result, topEvent: e.target.value } }))}
+                          placeholder="The top undesired event..."
+                          style={{ width: "100%", background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: 4, padding: "5px 8px", color: COLORS.text, fontSize: 11, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
+                      </div>
+                      <div style={{ fontSize: 9, color: COLORS.textMuted, letterSpacing: 1, marginBottom: 4 }}>FAULT TREE <span style={{ color: COLORS.border, fontWeight: 400 }}>(+ adds sub-cause; a node with children uses an AND/OR gate)</span></div>
                       <div style={{ background: COLORS.surface, borderRadius: 6, padding: "10px 12px", marginBottom: 10, border: `1px solid ${COLORS.border}` }}>{renderNode(rcaPanel.result.tree)}</div>
-                      {rcaPanel.result.criticalPath && (
-                        <div style={{ marginBottom: 10, padding: "8px 10px", background: COLORS.accentDim, borderRadius: 6, border: `1px solid ${COLORS.accent}44` }}>
-                          <div style={{ fontSize: 9, color: COLORS.accent, letterSpacing: 1, marginBottom: 3 }}>CRITICAL PATH</div>
-                          <div style={{ fontSize: 10, color: COLORS.textDim, lineHeight: 1.5 }}>{rcaPanel.result.criticalPath}</div>
-                        </div>
-                      )}
+                      <div style={{ marginBottom: 10, padding: "8px 10px", background: COLORS.accentDim, borderRadius: 6, border: `1px solid ${COLORS.accent}44` }}>
+                        <div style={{ fontSize: 9, color: COLORS.accent, letterSpacing: 1, marginBottom: 3 }}>CRITICAL PATH</div>
+                        <textarea value={rcaPanel.result.criticalPath ?? ""} onChange={e => setRcaPanel(s => ({ ...s, result: { ...s.result, criticalPath: e.target.value } }))}
+                          rows={2} placeholder="The most critical failure chain from root to top event..."
+                          style={{ width: "100%", background: "transparent", border: `1px solid ${COLORS.accent}44`, borderRadius: 4, padding: "5px 8px", color: COLORS.textDim, fontSize: 10, lineHeight: 1.5, fontFamily: "inherit", resize: "vertical", outline: "none", boxSizing: "border-box" }} />
+                      </div>
                       <div style={{ padding: "10px 12px", background: COLORS.tealDim, borderRadius: 6, border: `1px solid ${COLORS.teal}44`, marginBottom: 10 }}>
-                        <div style={{ fontSize: 9, color: COLORS.teal, letterSpacing: 1, marginBottom: 4 }}>ROOT CAUSE</div>
-                        <div style={{ fontSize: 11, color: COLORS.text, lineHeight: 1.5 }}>{rcaPanel.result.rootCause}</div>
+                        <div style={{ fontSize: 9, color: COLORS.teal, letterSpacing: 1, marginBottom: 4 }}>ROOT CAUSE <span style={{ color: COLORS.textMuted, fontWeight: 400 }}>(editable)</span></div>
+                        <textarea value={rcaPanel.result.rootCause ?? ""} onChange={e => setRcaPanel(s => ({ ...s, result: { ...s.result, rootCause: e.target.value } }))}
+                          rows={2} placeholder="Primary root cause identified by the fault tree..."
+                          style={{ width: "100%", background: "transparent", border: `1px solid ${COLORS.teal}44`, borderRadius: 4, padding: "5px 8px", color: COLORS.text, fontSize: 11, fontFamily: "inherit", resize: "vertical", outline: "none", boxSizing: "border-box" }} />
                       </div>
                       <button className="nav-btn" onClick={() => { setDefectEditForm(f => ({ ...f, rootCause: rcaPanel.result.rootCause })); setRcaPanel(null); }}
                         style={{ padding: "5px 14px", background: COLORS.tealDim, color: COLORS.teal, borderRadius: 4, fontSize: 9, fontWeight: 700, letterSpacing: 1, fontFamily: "inherit", border: `1px solid ${COLORS.teal}44` }}>
