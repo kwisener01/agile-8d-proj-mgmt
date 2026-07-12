@@ -147,7 +147,7 @@ export default function FlowForge() {
   const [sprintPlan, setSprintPlan] = useState(null);
   const [storyPrompt, setStoryPrompt] = useState("");
   const [rcaPanel, setRcaPanel] = useState(null); // { defectId, tool, result }
-  const [rcaMode, setRcaMode] = useState("ai"); // "ai" | "manual"
+  const [rcaMode, setRcaMode] = useState("manual"); // "ai" | "manual"
   const [addingToSprint, setAddingToSprint] = useState(null); // sprintId showing the add-story picker
   const [evidence, setEvidence] = useState({}); // { [defectId]: [...] }
   const [uploadingEvidence, setUploadingEvidence] = useState(false);
