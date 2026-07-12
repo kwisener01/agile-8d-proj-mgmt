@@ -1,8 +1,39 @@
 export const dynamic = "force-dynamic";
 import { NextResponse } from "next/server";
-import Anthropic from "@anthropic-ai/sdk";
+import { generateText } from "ai";
 
-const client = new Anthropic();
+// Ordered list of models to try, cheapest/free-tier first. Each falls through to
+// the next on ANY failure (provider error, rate limit, or unparseable JSON), so a
+// single flaky/exhausted model never breaks the feature. All route through the
+// Vercel AI Gateway via plain "provider/model" strings — no per-provider SDK.
+// Override the order/set via the AI_MODELS env var (comma-separated).
+// Tip: run `gateway.getAvailableModels()` to confirm current slugs before editing.
+const MODELS = (
+  process.env.AI_MODELS ||
+  "google/gemini-3-flash,anthropic/claude-haiku-4.5,openai/gpt-5.4,anthropic/claude-sonnet-4.6"
+)
+  .split(",")
+  .map((s) => s.trim())
+  .filter(Boolean);
+
+// Try each model in turn. For JSON actions we parse inside the loop so a model that
+// returns malformed JSON is treated as a failure and the next model is tried.
+async function runAI({ prompt, maxOutputTokens, json }) {
+  let lastErr;
+  for (const model of MODELS) {
+    try {
+      const { text } = await generateText({ model, prompt, maxOutputTokens });
+      const trimmed = (text || "").trim();
+      if (!json) return { data: trimmed, model };
+      const clean = trimmed.replace(/^```(?:json)?\s*/m, "").replace(/\s*```$/m, "").trim();
+      return { data: JSON.parse(clean), model }; // throws on bad JSON -> next model
+    } catch (err) {
+      lastErr = err;
+      console.error(`AI model ${model} failed (${json ? "json" : "text"}):`, err?.message);
+    }
+  }
+  throw lastErr || new Error("All AI models failed");
+}
 
 export async function POST(req) {
   const { action, ...payload } = await req.json();
@@ -192,25 +223,10 @@ Return ONLY valid JSON with no markdown, no explanation, no code blocks:
   }
 
   try {
-    const msg = await client.messages.create({
-      model: "claude-opus-4-6",
-      max_tokens: maxTokens,
-      messages: [{ role: "user", content: prompt }],
-    });
-
-    const text = msg.content[0].text.trim();
-
-    if (action === "generate8dReport") {
-      return NextResponse.json({ report: text });
-    }
-
-    // Strip any accidental markdown fences
-    const clean = text.replace(/^```(?:json)?\s*/m, "").replace(/\s*```$/m, "").trim();
-    try {
-      return NextResponse.json(JSON.parse(clean));
-    } catch {
-      return NextResponse.json({ raw: text, error: "Parse error" });
-    }
+    const isReport = action === "generate8dReport";
+    const { data, model } = await runAI({ prompt, maxOutputTokens: maxTokens, json: !isReport });
+    if (isReport) return NextResponse.json({ report: data, model });
+    return NextResponse.json(data);
   } catch (err) {
     console.error("AI route error:", err);
     return NextResponse.json({ error: err.message }, { status: 500 });

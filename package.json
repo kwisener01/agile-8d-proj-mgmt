@@ -14,10 +14,12 @@
     "@prisma/adapter-libsql": "^5.22.0",
     "@prisma/client": "^5.22.0",
     "@vercel/blob": "^2.3.3",
+    "ai": "^6.0.224",
     "next": "^14.2.0",
     "react": "^18.3.0",
     "react-dom": "^18.3.0",
-    "resend": "^6.10.0"
+    "resend": "^6.10.0",
+    "zod": "^4.4.3"
   },
   "prisma": {
     "seed": "node prisma/seed.js"
