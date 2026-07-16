@@ -26,6 +26,34 @@ html, body {
   border-radius: 2px;
 }
 
+::-webkit-scrollbar-thumb:hover {
+  background: #3A4157;
+}
+
+/* Text boxes — comfortable to read, scroll internally when content is long,
+   and stay user-resizable. Applies app-wide; inline styles don't set these props. */
+textarea {
+  line-height: 1.6;
+  min-height: 64px;
+  max-height: 320px;
+  overflow-y: auto;
+  resize: vertical;
+  scrollbar-width: thin;
+}
+
+textarea::-webkit-scrollbar {
+  width: 8px;
+}
+
+/* Visible focus ring for keyboard/mouse users. Inline styles use `outline: none`,
+   so we use border-color + box-shadow (not set inline) to indicate the active field. */
+textarea:focus,
+input:focus,
+select:focus {
+  border-color: #F97316 !important;
+  box-shadow: 0 0 0 2px rgba(249, 115, 22, 0.18);
+}
+
 .card-hover {
   transition: all 0.15s ease;
   cursor: pointer;
