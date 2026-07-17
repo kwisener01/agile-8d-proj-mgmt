@@ -95,7 +95,7 @@ const typeColor = (t) => ({ Bug: COLORS.red, Story: COLORS.teal, Feature: COLORS
 
 export default function FlowForge() {
   const [view, setView] = useState("board"); // board | defects | bridge | pulse | sprints
-  const [data, setData] = useState({ agileItems: [], defects: [], sprints: [] });
+  const [data, setData] = useState({ agileItems: [], defects: [], sprints: [], members: [] });
   const [loading, setLoading] = useState(true);
   const [selectedDefect, setSelectedDefect] = useState(null);
 
@@ -105,14 +105,15 @@ export default function FlowForge() {
       fetch("/api/defects").then((r) => r.json()).catch(() => []),
       fetch("/api/sprints").then((r) => r.json()).catch(() => []),
       fetch("/api/evidence").then((r) => r.json()).catch(() => []),
-    ]).then(([agileItems, defects, sprints, allEvidence]) => {
+      fetch("/api/members").then((r) => r.json()).catch(() => []),
+    ]).then(([agileItems, defects, sprints, allEvidence, members]) => {
       // Group evidence by defectId so it's immediately available
       const evidenceMap = {};
       for (const item of allEvidence) {
         if (!evidenceMap[item.defectId]) evidenceMap[item.defectId] = [];
         evidenceMap[item.defectId].push(item);
       }
-      setData({ agileItems, defects, sprints });
+      setData({ agileItems, defects, sprints, members: Array.isArray(members) ? members : [] });
       setEvidence(evidenceMap);
       setLoading(false);
     });
@@ -154,6 +155,9 @@ export default function FlowForge() {
   const [lightboxImg, setLightboxImg] = useState(null);
   const [evidenceCaption, setEvidenceCaption] = useState("");
   const [evidencePhase, setEvidencePhase] = useState("");
+  const [memberForm, setMemberForm] = useState({ initials: "", name: "", email: "", role: "" });
+  const [editingMemberId, setEditingMemberId] = useState(null);
+  const [savingMember, setSavingMember] = useState(false);
   const [isIsNotData, setIsIsNotData] = useState({}); // { [defectId]: { what, where, when, who, howMuch } }
   const [fiveW2HData, setFiveW2HData] = useState({}); // { [defectId]: { what, why, where, when, who, how, howMuch } }
   const [casSuggestions, setCasSuggestions] = useState(null); // { defectId, actions, summary }
@@ -446,6 +450,43 @@ export default function FlowForge() {
   const deleteEvidence = async (defectId, evidenceId) => {
     await fetch(`/api/evidence/${evidenceId}`, { method: "DELETE" });
     setEvidence(e => ({ ...e, [defectId]: (e[defectId] || []).filter(i => i.id !== evidenceId) }));
+  };
+
+  const resetMemberForm = () => { setMemberForm({ initials: "", name: "", email: "", role: "" }); setEditingMemberId(null); };
+
+  const saveMember = async () => {
+    const initials = memberForm.initials.trim().toUpperCase();
+    if (!initials) { alert("Initials are required."); return; }
+    if (memberForm.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(memberForm.email.trim())) {
+      alert("Please enter a valid email address."); return;
+    }
+    setSavingMember(true);
+    try {
+      const payload = { initials, name: memberForm.name.trim(), email: memberForm.email.trim(), role: memberForm.role.trim() };
+      const res = editingMemberId
+        ? await fetch(`/api/members/${editingMemberId}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) })
+        : await fetch("/api/members", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+      if (!res.ok) { const err = await res.json().catch(() => ({})); alert(err.error || `Failed to save member (${res.status})`); return; }
+      const saved = await res.json();
+      setData(d => ({
+        ...d,
+        members: editingMemberId
+          ? d.members.map(m => m.id === saved.id ? saved : m)
+          : [...d.members, saved].sort((a, b) => a.initials.localeCompare(b.initials)),
+      }));
+      resetMemberForm();
+    } catch (err) {
+      alert(`Error saving member: ${err.message}`);
+    } finally {
+      setSavingMember(false);
+    }
+  };
+
+  const deleteMember = async (id) => {
+    if (!confirm("Remove this team member? This does not change existing defect/story assignments.")) return;
+    await fetch(`/api/members/${id}`, { method: "DELETE" });
+    setData(d => ({ ...d, members: d.members.filter(m => m.id !== id) }));
+    if (editingMemberId === id) resetMemberForm();
   };
 
   const assignToSprint = async (storyId, sprintId) => {
@@ -1182,6 +1223,7 @@ ${activeSprint ? `
             { id: "bridge", label: "BRIDGE" },
             { id: "pulse", label: "PULSE" },
             { id: "sprints", label: "SPRINTS" },
+            { id: "team", label: "TEAM" },
           ].map(n => (
             <button key={n.id} className="nav-btn" onClick={() => setView(n.id)}
               style={{ padding: "6px 14px", borderRadius: 4, fontSize: 11, letterSpacing: 1, fontWeight: 600, fontFamily: "inherit", whiteSpace: "nowrap",
@@ -1195,7 +1237,7 @@ ${activeSprint ? `
 
         {isMobile && (
           <div style={{ flex: 1, textAlign: "center", fontFamily: "'Bebas Neue'", fontSize: 16, letterSpacing: 2, color: COLORS.text }}>
-            {{ board: "AGILE BOARD", defects: "8D TRACKER", bridge: "BRIDGE", pulse: "PULSE", sprints: "SPRINTS" }[view]}
+            {{ board: "AGILE BOARD", defects: "8D TRACKER", bridge: "BRIDGE", pulse: "PULSE", sprints: "SPRINTS", team: "TEAM" }[view]}
           </div>
         )}
 
@@ -1215,10 +1257,10 @@ ${activeSprint ? `
             </div>
           ))}
           {!isMobile && (
-            <div style={{ display: "flex", gap: -4 }}>
-              {["KW", "RK", "ML"].map(a => (
-                <div key={a} style={{ width: 28, height: 28, borderRadius: "50%", background: COLORS.border, border: `2px solid ${COLORS.surface}`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 9, fontWeight: 700, color: COLORS.accent }}>
-                  {a}
+            <div style={{ display: "flex", gap: -4, cursor: "pointer" }} onClick={() => setView("team")} title="Manage team">
+              {(data.members.length ? data.members : [{ id: "_", initials: "+" }]).slice(0, 5).map(a => (
+                <div key={a.id} title={a.name || a.initials} style={{ width: 28, height: 28, borderRadius: "50%", background: COLORS.border, border: `2px solid ${COLORS.surface}`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 9, fontWeight: 700, color: COLORS.accent }}>
+                  {a.initials}
                 </div>
               ))}
             </div>
@@ -1698,6 +1740,89 @@ ${activeSprint ? `
           </div>
         )}
 
+        {/* TEAM */}
+        {view === "team" && (
+          <div style={{ flex: 1, padding: isMobile ? "16px 12px" : "20px 24px", overflow: "auto", paddingBottom: isMobile ? 76 : undefined }}>
+            <div style={{ marginBottom: 20 }}>
+              <div style={{ fontFamily: "'Bebas Neue'", fontSize: isMobile ? 22 : 28, letterSpacing: 2, lineHeight: 1 }}>TEAM</div>
+              <div style={{ fontSize: 10, color: COLORS.textMuted, marginTop: 2 }}>
+                Manage members and their email addresses. Emails are used for 8D and sprint notifications.
+              </div>
+            </div>
+
+            <div style={{ display: "flex", flexDirection: isMobile ? "column" : "row", gap: 20, alignItems: "flex-start" }}>
+              {/* Add / edit form */}
+              <div style={{ width: isMobile ? "100%" : 320, flexShrink: 0, background: COLORS.card, border: `1px solid ${COLORS.border}`, borderRadius: 8, overflow: "hidden" }}>
+                <div style={{ padding: "10px 16px", borderBottom: `1px solid ${COLORS.border}`, fontSize: 10, color: COLORS.accent, letterSpacing: 1, fontWeight: 700 }}>
+                  {editingMemberId ? "EDIT MEMBER" : "ADD MEMBER"}
+                </div>
+                <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 10 }}>
+                  {[
+                    { key: "initials", label: "INITIALS *", placeholder: "e.g. JS", max: 4 },
+                    { key: "name", label: "NAME", placeholder: "e.g. Jane Smith" },
+                    { key: "email", label: "EMAIL", placeholder: "jane@company.com", type: "email" },
+                    { key: "role", label: "ROLE", placeholder: "e.g. Quality Engineer" },
+                  ].map(({ key, label, placeholder, type, max }) => (
+                    <div key={key}>
+                      <div style={{ fontSize: 9, color: COLORS.textMuted, letterSpacing: 1, marginBottom: 4 }}>{label}</div>
+                      <input type={type || "text"} value={memberForm[key]} placeholder={placeholder} maxLength={max}
+                        onChange={e => setMemberForm(f => ({ ...f, [key]: key === "initials" ? e.target.value.toUpperCase() : e.target.value }))}
+                        onKeyDown={e => { if (e.key === "Enter") saveMember(); }}
+                        style={{ width: "100%", background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: 6, padding: "8px 11px", color: COLORS.text, fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
+                    </div>
+                  ))}
+                  <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
+                    <button className="nav-btn" disabled={savingMember} onClick={saveMember}
+                      style={{ flex: 1, padding: "8px 14px", background: COLORS.accent, color: "#fff", borderRadius: 6, fontSize: 10, fontWeight: 700, letterSpacing: 1, fontFamily: "inherit", opacity: savingMember ? 0.5 : 1 }}>
+                      {savingMember ? "SAVING..." : editingMemberId ? "SAVE CHANGES" : "+ ADD MEMBER"}
+                    </button>
+                    {editingMemberId && (
+                      <button className="nav-btn" onClick={resetMemberForm}
+                        style={{ padding: "8px 14px", background: COLORS.border, color: COLORS.textMuted, borderRadius: 6, fontSize: 10, fontWeight: 700, letterSpacing: 1, fontFamily: "inherit" }}>
+                        CANCEL
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Member list */}
+              <div style={{ flex: 1, width: isMobile ? "100%" : undefined }}>
+                {data.members.length === 0 ? (
+                  <div style={{ background: COLORS.card, border: `1px dashed ${COLORS.border}`, borderRadius: 8, padding: "32px 20px", textAlign: "center", fontSize: 11, color: COLORS.textMuted }}>
+                    No team members yet. Add one on the left to start sending them notifications.
+                  </div>
+                ) : (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                    {data.members.map(m => (
+                      <div key={m.id} style={{ display: "flex", alignItems: "center", gap: 12, background: COLORS.card, border: `1px solid ${COLORS.border}`, borderRadius: 8, padding: "10px 14px" }}>
+                        <div style={{ width: 36, height: 36, flexShrink: 0, borderRadius: "50%", background: COLORS.border, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700, color: COLORS.accent }}>
+                          {m.initials}
+                        </div>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: 13, color: COLORS.text, fontWeight: 500 }}>
+                            {m.name || m.initials}
+                            {m.role && <span style={{ fontSize: 9, color: COLORS.textMuted, marginLeft: 8, letterSpacing: 0.5 }}>{m.role}</span>}
+                          </div>
+                          <div style={{ fontSize: 11, color: m.email ? COLORS.teal : COLORS.textMuted, marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontStyle: m.email ? "normal" : "italic" }}>
+                            {m.email || "No email — won't receive notifications"}
+                          </div>
+                        </div>
+                        <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+                          <button className="nav-btn" onClick={() => { setEditingMemberId(m.id); setMemberForm({ initials: m.initials, name: m.name || "", email: m.email || "", role: m.role || "" }); }}
+                            style={{ background: COLORS.accentDim, color: COLORS.accent, padding: "5px 10px", borderRadius: 4, fontSize: 9, fontWeight: 700, letterSpacing: 1, fontFamily: "inherit" }}>EDIT</button>
+                          <button className="nav-btn" onClick={() => deleteMember(m.id)}
+                            style={{ background: COLORS.redDim, color: COLORS.red, padding: "5px 10px", borderRadius: 4, fontSize: 9, fontWeight: 700, letterSpacing: 1, fontFamily: "inherit" }}>✕</button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
       </div>
 
       {/* BOTTOM NAV (mobile only) */}
@@ -1708,6 +1833,7 @@ ${activeSprint ? `
           { id: "bridge", label: "BRIDGE", icon: "⇄" },
           { id: "pulse", label: "PULSE", icon: "◉" },
           { id: "sprints", label: "SPRINT", icon: "⚡" },
+          { id: "team", label: "TEAM", icon: "☺" },
         ].map(n => (
           <button key={n.id} className={`bottom-nav-btn${view === n.id ? " active" : ""}`}
             onClick={() => setView(n.id)}

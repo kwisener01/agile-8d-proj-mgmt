@@ -1,23 +1,37 @@
 export const dynamic = "force-dynamic";
 import { NextResponse } from "next/server";
 import { Resend } from "resend";
+import { prisma } from "../../../lib/prisma";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
-// Map initials → name + email. Update these with real addresses.
-const TEAM = {
-  KW: { name: "K. Wisener",  email: process.env.EMAIL_KW || "kw@example.com" },
-  RK: { name: "R. K.",       email: process.env.EMAIL_RK || "rk@example.com" },
-  ML: { name: "M. L.",       email: process.env.EMAIL_ML || "ml@example.com" },
+// Fallback map for initials → email via env vars. The Team screen (DB-backed
+// Member records) takes precedence; this only covers members not yet in the DB.
+const ENV_EMAILS = {
+  KW: process.env.EMAIL_KW,
+  RK: process.env.EMAIL_RK,
+  ML: process.env.EMAIL_ML,
 };
 
 const FROM = process.env.NOTIFY_FROM || "FlowForge <notifications@flowforge.app>";
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || "https://your-app.vercel.app";
 
-function resolveEmails(initials = []) {
+// Build initials → email lookup from the DB, then fall back to env vars.
+async function buildEmailMap() {
+  const map = { ...ENV_EMAILS };
+  try {
+    const members = await prisma.member.findMany();
+    for (const m of members) {
+      if (m.email) map[m.initials] = m.email;
+    }
+  } catch (_) { /* DB unavailable — env fallback still applies */ }
+  return map;
+}
+
+function resolveEmails(initials, emailMap) {
   return [...new Set(
     (Array.isArray(initials) ? initials : [initials])
-      .map(i => TEAM[i]?.email)
+      .map(i => emailMap[i])
       .filter(Boolean)
   )];
 }
@@ -60,13 +74,14 @@ function baseTemplate(title, bodyHtml) {
 
 export async function POST(req) {
   const { type, ...payload } = await req.json();
+  const emailMap = await buildEmailMap();
 
   let subject, html, to;
 
   if (type === "new_defect") {
     const { defect } = payload;
     const team = Array.isArray(defect.team) ? defect.team : [defect.owner];
-    to = resolveEmails([defect.owner, ...team]);
+    to = resolveEmails([defect.owner, ...team], emailMap);
     subject = `[${defect.severity}] New 8D Defect: ${defect.title}`;
     html = baseTemplate("New 8D Defect Opened", `
       <div class="field"><div class="field-label">Defect ID</div><div class="field-value">${defect.id}</div></div>
@@ -84,7 +99,7 @@ export async function POST(req) {
   } else if (type === "containment_saved") {
     const { defect } = payload;
     const team = Array.isArray(defect.team) ? defect.team : [defect.owner];
-    to = resolveEmails([defect.owner, ...team]);
+    to = resolveEmails([defect.owner, ...team], emailMap);
     subject = `[ACTION REQUIRED] Containment Logged — ${defect.id}: ${defect.title}`;
     html = baseTemplate("D3 Containment Action Logged", `
       <div class="field"><div class="field-label">Defect</div><div class="field-value">${defect.id} — ${defect.title}</div></div>
@@ -101,7 +116,7 @@ export async function POST(req) {
   } else if (type === "phase_advanced") {
     const { defect, newPhase } = payload;
     const team = Array.isArray(defect.team) ? defect.team : [defect.owner];
-    to = resolveEmails([defect.owner, ...team]);
+    to = resolveEmails([defect.owner, ...team], emailMap);
     const phaseNames = { D0:"Emergency Response", D1:"Team Formation", D2:"Problem Description", D3:"Containment", D4:"Root Cause Analysis", D5:"Corrective Actions", D6:"Implement & Validate", D7:"Prevent Recurrence", D8:"Team Recognition" };
     subject = `[${defect.id}] Phase Advanced → ${newPhase}: ${phaseNames[newPhase] || newPhase}`;
     html = baseTemplate(`Phase Advanced to ${newPhase}`, `
@@ -116,7 +131,7 @@ export async function POST(req) {
 
   } else if (type === "story_assigned") {
     const { story, sprint } = payload;
-    to = resolveEmails([story.assignee]);
+    to = resolveEmails([story.assignee], emailMap);
     subject = `[Sprint Assignment] ${story.title}`;
     html = baseTemplate("Story Assigned to Sprint", `
       <div class="field"><div class="field-label">Story</div><div class="field-value">${story.id} — ${story.title}</div></div>

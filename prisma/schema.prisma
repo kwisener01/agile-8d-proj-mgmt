@@ -57,6 +57,14 @@ model Defect {
   evidence          Evidence[]
 }
 
+model Member {
+  id       String @id
+  initials String @unique
+  name     String @default("")
+  email    String @default("")
+  role     String @default("")
+}
+
 model Evidence {
   id         String @id
   defectId   String
