@@ -416,9 +416,14 @@ export default function FlowForge() {
     fetch("/api/notify", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type, ...payload }) }).catch(() => {});
 
   const fetchEvidence = async (defectId) => {
-    const res = await fetch(`/api/evidence?defectId=${defectId}`);
-    const items = await res.json();
-    setEvidence(e => ({ ...e, [defectId]: items }));
+    try {
+      const res = await fetch(`/api/evidence?defectId=${defectId}`);
+      if (!res.ok) return; // keep any eager-loaded evidence; don't poison state
+      const items = await res.json();
+      setEvidence(e => ({ ...e, [defectId]: Array.isArray(items) ? items : [] }));
+    } catch (_) {
+      /* network error — leave existing evidence untouched */
+    }
   };
 
   const uploadEvidence = async (defectId, file, caption, phase) => {
@@ -1194,6 +1199,77 @@ ${activeSprint ? `
     a.download = `FlowForge_8D_${new Date().toISOString().split("T")[0]}.csv`;
     a.click();
     URL.revokeObjectURL(url);
+  };
+
+  // Reusable evidence/attachments block — used in both the read-only defect
+  // panel and the edit modal so files can be attached to a discipline (phase)
+  // while editing an 8D. Relies on `selectedDefect` being set.
+  const isImageUrl = (url) => /\.(jpe?g|png|gif|webp|svg|bmp|avif)$/i.test(url || "");
+  const renderEvidenceSection = (subtitle) => {
+    if (!selectedDefect) return null;
+    const items = Array.isArray(evidence[selectedDefect.id]) ? evidence[selectedDefect.id] : [];
+    return (
+      <div style={{ marginTop: 16, background: COLORS.card, border: `1px solid ${COLORS.border}`, borderRadius: 8, overflow: "hidden" }}>
+        <div style={{ padding: "10px 14px", borderBottom: `1px solid ${COLORS.border}`, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <div>
+            <div style={{ fontSize: 9, color: COLORS.accent, letterSpacing: 1, fontWeight: 700 }}>EVIDENCE / PHOTOS</div>
+            {subtitle && <div style={{ fontSize: 8, color: COLORS.textMuted, marginTop: 2 }}>{subtitle}</div>}
+          </div>
+          <div style={{ fontSize: 9, color: COLORS.textMuted }}>{items.length} attached</div>
+        </div>
+        <div style={{ padding: "12px 14px" }}>
+          {/* Upload row */}
+          <div style={{ display: "flex", gap: 6, marginBottom: 10, flexWrap: "wrap" }}>
+            <input value={evidenceCaption} onChange={e => setEvidenceCaption(e.target.value)} placeholder="Caption (optional)"
+              style={{ flex: 1, minWidth: 120, background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: 4, padding: "5px 8px", color: COLORS.text, fontSize: 10, fontFamily: "inherit", outline: "none" }} />
+            <select value={evidencePhase} onChange={e => setEvidencePhase(e.target.value)}
+              style={{ background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: 4, padding: "5px 8px", color: evidencePhase ? COLORS.text : COLORS.textMuted, fontSize: 10, fontFamily: "inherit", outline: "none" }}>
+              <option value="">Discipline (optional)</option>
+              {D_PHASES.map(p => <option key={p.id} value={p.id}>{p.id} — {p.name}</option>)}
+            </select>
+            <label style={{ cursor: uploadingEvidence ? "not-allowed" : "pointer" }}>
+              <input type="file" accept="image/*,video/*,.pdf" style={{ display: "none" }} disabled={uploadingEvidence}
+                onChange={async e => {
+                  const file = e.target.files[0];
+                  if (file) await uploadEvidence(selectedDefect.id, file, evidenceCaption, evidencePhase);
+                  e.target.value = "";
+                }} />
+              <div style={{ padding: "5px 12px", background: uploadingEvidence ? COLORS.border : COLORS.accentDim, color: uploadingEvidence ? COLORS.textMuted : COLORS.accent, borderRadius: 4, fontSize: 9, fontWeight: 700, letterSpacing: 1, whiteSpace: "nowrap" }}>
+                {uploadingEvidence ? "UPLOADING..." : "+ ATTACH"}
+              </div>
+            </label>
+          </div>
+          {/* Photo grid */}
+          {items.length === 0 ? (
+            <div style={{ fontSize: 10, color: COLORS.textMuted, textAlign: "center", padding: "16px 0" }}>No evidence attached yet. Upload photos, PDFs, or screenshots.</div>
+          ) : (
+            <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(3, 1fr)", gap: 8 }}>
+              {items.map(item => (
+                <div key={item.id} style={{ position: "relative", borderRadius: 6, overflow: "hidden", border: `1px solid ${COLORS.border}`, background: COLORS.surface }}>
+                  {isImageUrl(item.url) ? (
+                    <img src={item.url} alt={item.caption} onClick={() => setLightboxImg(item.url)}
+                      style={{ width: "100%", aspectRatio: "1", objectFit: "cover", cursor: "zoom-in", display: "block" }} />
+                  ) : (
+                    <a href={item.url} target="_blank" rel="noreferrer"
+                      style={{ display: "flex", alignItems: "center", justifyContent: "center", aspectRatio: "1", background: COLORS.card, fontSize: 22, textDecoration: "none" }}>
+                      {(item.url || "").toLowerCase().endsWith(".pdf") ? "📄" : "📎"}
+                    </a>
+                  )}
+                  <div style={{ padding: "5px 6px" }}>
+                    {item.phase && <div style={{ fontSize: 8, color: COLORS.accent, letterSpacing: 1, marginBottom: 2 }}>{item.phase}</div>}
+                    {item.caption && <div style={{ fontSize: 9, color: COLORS.textDim, lineHeight: 1.3 }}>{item.caption}</div>}
+                  </div>
+                  <button className="nav-btn" onClick={() => deleteEvidence(selectedDefect.id, item.id)}
+                    style={{ position: "absolute", top: 4, right: 4, width: 18, height: 18, borderRadius: "50%", background: COLORS.redDim, color: COLORS.red, fontSize: 10, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "inherit", lineHeight: 1 }}>
+                    ×
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    );
   };
 
   if (loading) {
@@ -1977,63 +2053,7 @@ ${activeSprint ? `
               ))}
 
               {/* EVIDENCE */}
-              <div style={{ marginTop: 16, background: COLORS.card, border: `1px solid ${COLORS.border}`, borderRadius: 8, overflow: "hidden" }}>
-                <div style={{ padding: "10px 14px", borderBottom: `1px solid ${COLORS.border}`, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                  <div style={{ fontSize: 9, color: COLORS.accent, letterSpacing: 1, fontWeight: 700 }}>EVIDENCE / PHOTOS</div>
-                  <div style={{ fontSize: 9, color: COLORS.textMuted }}>{(evidence[selectedDefect.id] || []).length} attached</div>
-                </div>
-                <div style={{ padding: "12px 14px" }}>
-                  {/* Upload row */}
-                  <div style={{ display: "flex", gap: 6, marginBottom: 10, flexWrap: "wrap" }}>
-                    <input value={evidenceCaption} onChange={e => setEvidenceCaption(e.target.value)} placeholder="Caption (optional)"
-                      style={{ flex: 1, minWidth: 120, background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: 4, padding: "5px 8px", color: COLORS.text, fontSize: 10, fontFamily: "inherit", outline: "none" }} />
-                    <select value={evidencePhase} onChange={e => setEvidencePhase(e.target.value)}
-                      style={{ background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: 4, padding: "5px 8px", color: evidencePhase ? COLORS.text : COLORS.textMuted, fontSize: 10, fontFamily: "inherit", outline: "none" }}>
-                      <option value="">Phase (optional)</option>
-                      {D_PHASES.map(p => <option key={p.id} value={p.id}>{p.id} — {p.name}</option>)}
-                    </select>
-                    <label style={{ cursor: uploadingEvidence ? "not-allowed" : "pointer" }}>
-                      <input type="file" accept="image/*,video/*,.pdf" style={{ display: "none" }} disabled={uploadingEvidence}
-                        onChange={async e => {
-                          const file = e.target.files[0];
-                          if (file) await uploadEvidence(selectedDefect.id, file, evidenceCaption, evidencePhase);
-                          e.target.value = "";
-                        }} />
-                      <div style={{ padding: "5px 12px", background: uploadingEvidence ? COLORS.border : COLORS.accentDim, color: uploadingEvidence ? COLORS.textMuted : COLORS.accent, borderRadius: 4, fontSize: 9, fontWeight: 700, letterSpacing: 1, whiteSpace: "nowrap" }}>
-                        {uploadingEvidence ? "UPLOADING..." : "+ ATTACH"}
-                      </div>
-                    </label>
-                  </div>
-                  {/* Photo grid */}
-                  {(evidence[selectedDefect.id] || []).length === 0 ? (
-                    <div style={{ fontSize: 10, color: COLORS.textMuted, textAlign: "center", padding: "16px 0" }}>No evidence attached yet. Upload photos, PDFs, or screenshots.</div>
-                  ) : (
-                    <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(3, 1fr)", gap: 8 }}>
-                      {(evidence[selectedDefect.id] || []).map(item => (
-                        <div key={item.id} style={{ position: "relative", borderRadius: 6, overflow: "hidden", border: `1px solid ${COLORS.border}`, background: COLORS.surface }}>
-                          {item.url.match(/\.(jpg|jpeg|png|gif|webp)$/i) ? (
-                            <img src={item.url} alt={item.caption} onClick={() => setLightboxImg(item.url)}
-                              style={{ width: "100%", aspectRatio: "1", objectFit: "cover", cursor: "zoom-in", display: "block" }} />
-                          ) : (
-                            <a href={item.url} target="_blank" rel="noreferrer"
-                              style={{ display: "flex", alignItems: "center", justifyContent: "center", aspectRatio: "1", background: COLORS.card, fontSize: 22, textDecoration: "none" }}>
-                              {item.url.endsWith(".pdf") ? "📄" : "📎"}
-                            </a>
-                          )}
-                          <div style={{ padding: "5px 6px" }}>
-                            {item.phase && <div style={{ fontSize: 8, color: COLORS.accent, letterSpacing: 1, marginBottom: 2 }}>{item.phase}</div>}
-                            {item.caption && <div style={{ fontSize: 9, color: COLORS.textDim, lineHeight: 1.3 }}>{item.caption}</div>}
-                          </div>
-                          <button className="nav-btn" onClick={() => deleteEvidence(selectedDefect.id, item.id)}
-                            style={{ position: "absolute", top: 4, right: 4, width: 18, height: 18, borderRadius: "50%", background: COLORS.redDim, color: COLORS.red, fontSize: 10, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "inherit", lineHeight: 1 }}>
-                            ×
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
+              {renderEvidenceSection()}
 
               <div style={{ marginTop: 16, background: COLORS.tealDim, border: `1px solid ${COLORS.teal}22`, borderRadius: 6, padding: "10px 14px" }}>
                 <div style={{ fontSize: 9, color: COLORS.teal, letterSpacing: 1, marginBottom: 6 }}>LINKED AGILE STORY</div>
@@ -2589,8 +2609,11 @@ ${activeSprint ? `
                     style={{ width: "100%", background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: 6, padding: "9px 12px", color: COLORS.text, fontSize: 13, fontFamily: "inherit", resize: "vertical", outline: "none", boxSizing: "border-box" }} />
                 </div>
               </div>
+              {/* EVIDENCE — attach files/photos to a discipline while editing */}
+              {renderEvidenceSection("Pick a discipline, then attach. Files upload immediately and persist independently of Save Changes.")}
+
               <button className="nav-btn" onClick={saveDefectEdit}
-                style={{ width: "100%", padding: "12px 0", background: COLORS.accent, color: "#fff", borderRadius: 8, fontSize: 14, fontWeight: 700, letterSpacing: 1, fontFamily: "inherit" }}>
+                style={{ width: "100%", marginTop: 16, padding: "12px 0", background: COLORS.accent, color: "#fff", borderRadius: 8, fontSize: 14, fontWeight: 700, letterSpacing: 1, fontFamily: "inherit" }}>
                 SAVE CHANGES
               </button>
             </div>
